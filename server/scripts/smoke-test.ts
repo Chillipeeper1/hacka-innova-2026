@@ -1,6 +1,7 @@
 // Recorre el flujo completo de la API contra un servidor ya corriendo.
 // Uso: npm run dev (en una terminal) y luego npm run test:smoke (en otra).
 import { io } from "socket.io-client";
+import { MAX_BIKE_DISTANCE_KM } from "../src/lib/speeds";
 
 const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:3001";
 const DEMO_CARD_UID = "DEMO-0001";
@@ -126,6 +127,64 @@ async function main() {
     description: "Smoke test",
   });
   assert(incidentRes.status === 201, "POST /incidents registra el reporte");
+
+  const originStop = route.stops[0]; // Catedral de Morelia (ruta 1)
+  const teleferico = routesRes.body.find((r: { id: number }) => r.id === 3);
+  const shortHopStop = teleferico.stops[teleferico.stops.length - 1]; // Central de Autobuses, ~1-3 km
+  const charo = routesRes.body.find((r: { id: number }) => r.id === 4);
+  const longHopStop = charo.stops[charo.stops.length - 1]; // Charo Centro, ~9 km
+
+  // Sin `modes`: debe devolver varias alternativas etiquetadas.
+  const defaultRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${shortHopStop.lat}&destination_lng=${shortHopStop.lng}`
+  );
+  assert(
+    defaultRes.status === 200 && defaultRes.body.alternatives.length >= 1,
+    "GET /journeys devuelve al menos una alternativa"
+  );
+  const labels = defaultRes.body.alternatives.map((alt: { label: string }) => alt.label);
+  assert(labels.includes("Más rápida"), "GET /journeys incluye la alternativa 'Más rápida'");
+
+  // `modes` excluyendo bici: una sola alternativa, sin ningún tramo `bike`.
+  const noBikeRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${shortHopStop.lat}&destination_lng=${shortHopStop.lng}` +
+      `&modes=combi,bus,teleferico`
+  );
+  assert(
+    noBikeRes.status === 200 && noBikeRes.body.alternatives.length === 1,
+    "GET /journeys con `modes` devuelve exactamente una alternativa"
+  );
+  const noBikeModes = new Set(
+    noBikeRes.body.alternatives[0].legs.map((leg: { mode: string }) => leg.mode)
+  );
+  assert(!noBikeModes.has("bike"), "GET /journeys respeta `modes` y excluye bici cuando se pide");
+
+  // `modes` inválido: 400.
+  const invalidModesRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${shortHopStop.lat}&destination_lng=${shortHopStop.lng}&modes=volador`
+  );
+  assert(invalidModesRes.status === 400, "GET /journeys rechaza un modo inválido en `modes`");
+
+  // Trayecto largo (~9 km, a Charo): fuera de MAX_BIKE_DISTANCE_KM. La
+  // propia alternativa "Más rápida" no debe encadenar tramos de bici que
+  // sumen más que el límite (relevo de bici a través de una parada usada
+  // solo como punto de paso) — verificarlo en TODAS las alternativas, no
+  // solo la más rápida, porque el bug real fue justo que una alternativa
+  // secundaria colaba el relevo mientras la primera se veía sana.
+  const longRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${longHopStop.lat}&destination_lng=${longHopStop.lng}`
+  );
+  for (const alt of longRes.body.alternatives as { label: string; legs: { mode: string; distance_km: number }[] }[]) {
+    const bikeKm = alt.legs.filter((leg) => leg.mode === "bike").reduce((sum, leg) => sum + leg.distance_km, 0);
+    assert(
+      bikeKm <= MAX_BIKE_DISTANCE_KM,
+      `GET /journeys: la alternativa "${alt.label}" no encadena bici más allá de MAX_BIKE_DISTANCE_KM (usó ${bikeKm} km)`
+    );
+  }
 
   console.log("\nTodo el flujo pasó correctamente.");
 }
