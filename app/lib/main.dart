@@ -10,7 +10,9 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
-import 'screens/trip_screen.dart';
+import 'screens/board_bus_screen.dart';
+import 'screens/onboard_trip_screen.dart';
+import 'screens/rating_screen.dart';
 import 'screens/walk_navigation_screen.dart';
 import 'theme.dart';
 
@@ -46,7 +48,9 @@ class MtappApp extends StatelessWidget {
         AppRoutes.stopPicker: (context) => const _StopPickerRoute(),
         AppRoutes.confirmStop: (context) => const _ConfirmStopRoute(),
         AppRoutes.walk: (context) => const _WalkRoute(),
+        AppRoutes.boardBus: (context) => const _BoardBusRoute(),
         AppRoutes.trip: (context) => const _TripRoute(),
+        AppRoutes.rating: (context) => const _RatingRoute(),
       },
     );
   }
@@ -64,7 +68,9 @@ class AppRoutes {
   static const String stopPicker = '/paradas';
   static const String confirmStop = '/confirmar-parada';
   static const String walk = '/ir-a-la-parada';
-  static const String trip = '/viaje';
+  static const String boardBus = '/esperar-camion';
+  static const String trip = '/en-viaje';
+  static const String rating = '/calificar';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -215,20 +221,51 @@ class _WalkRoute extends StatelessWidget {
       onProfile: () => _pending(context, 'Perfil'),
       onBack:
           () => Navigator.pushReplacementNamed(context, AppRoutes.stopPicker),
-      onBoarded: () => Navigator.pushReplacementNamed(context, AppRoutes.trip),
+      onBoarded:
+          () => Navigator.pushReplacementNamed(context, AppRoutes.boardBus),
     );
   }
 }
 
-/// Paso 5: a bordo, viendo la ruta y la unidad.
+/// Paso 5: esperar la unidad en la parada y subirse (con tarjeta o con monedas).
+class _BoardBusRoute extends StatelessWidget {
+  const _BoardBusRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return BoardBusScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onBoarded:
+          () => Navigator.pushReplacementNamed(context, AppRoutes.trip),
+      onCancel: () => _cancelTrip(context),
+    );
+  }
+}
+
+/// Paso 6: a bordo.
 class _TripRoute extends StatelessWidget {
   const _TripRoute();
 
   @override
   Widget build(BuildContext context) {
-    return TripScreen(
+    return OnboardTripScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
+      onArrived:
+          () => Navigator.pushReplacementNamed(context, AppRoutes.rating),
+      onCancel: () => _cancelTrip(context),
+    );
+  }
+}
+
+/// Paso 7: calificar, u omitirlo, y volver al inicio.
+class _RatingRoute extends StatelessWidget {
+  const _RatingRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return RatingScreen(
       onFinished:
           () => Navigator.pushNamedAndRemoveUntil(
             context,
@@ -237,4 +274,15 @@ class _TripRoute extends StatelessWidget {
           ),
     );
   }
+}
+
+/// Abandonar el viaje y volver al inicio.
+void _cancelTrip(BuildContext context) {
+  final container = ProviderScope.containerOf(context);
+  container.read(tripPlanProvider.notifier).reset();
+  Navigator.pushNamedAndRemoveUntil(
+    context,
+    AppRoutes.home,
+    (route) => false,
+  );
 }

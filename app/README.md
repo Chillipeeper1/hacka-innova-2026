@@ -24,9 +24,11 @@ Cinco pantallas, implementadas desde el archivo de Figma **HACKA**:
 | Elegir parada | `lib/screens/stop_picker_screen.dart` | `32:392` |
 | Confirmar parada | `lib/screens/confirm_stop_screen.dart` | `32:634` |
 | Ir a la parada | `lib/screens/walk_navigation_screen.dart` | `32:504` |
+| En viaje | `lib/screens/onboard_trip_screen.dart` | `43:799`, `45:879` |
+| Calificación | `lib/screens/rating_screen.dart` | `45:930` |
 
-`lib/screens/trip_screen.dart` (a bordo: ruta completa y dónde viene la unidad) no tiene
-diseño de Figma todavía; está armada con los mismos componentes que el resto.
+`lib/screens/board_bus_screen.dart` (esperar la unidad y pagar) no tiene diseño de Figma
+todavía; está armada con los mismos componentes que el resto.
 
 ## El flujo del viaje
 
@@ -36,8 +38,24 @@ Inicio (mapa limpio)
      └─ Paradas cerca      stop_picker_screen   opciones ordenadas por qué tan cerca te dejan
         └─ ¿Confirmar?     confirm_stop_screen  revisa distancia al destino y ETA
            └─ Ir a pie     walk_navigation      al llegar aparece la confirmación de abordaje
-              └─ A bordo   trip_screen          ruta completa, unidad en vivo, "ya me bajé"
+              └─ Esperar    board_bus_screen     el camión se acerca; pagar con tarjeta o monedas
+                 └─ A bordo onboard_trip_screen  avisa unos metros antes de la bajada
+                    └─ Fin  rating_screen        comentario y estrellas, omitible
 ```
+
+### Cómo se detecta que el pasajero subió
+
+Cuando la unidad queda a menos de `busApproachingMeters` aparece "Paga con tu tarjeta RFID".
+Desde ahí hay dos caminos:
+
+- **Tarjeta**: el tap va a `POST /card-taps`.
+- **Monedas**: el pasajero no toca nada. La pantalla se quita sola cuando la unidad **estuvo**
+  en la parada y luego se alejó más de `departedStopMeters`. La memoria de "estuvo aquí" es
+  necesaria: sin ella no se distingue una unidad que viene llegando de una que ya se fue,
+  porque en ambos casos está lejos.
+
+En producción esto se resolvería comparando la velocidad del dispositivo con la de la unidad;
+`CLAUDE.md` descarta la detección por sensores en esta fase.
 
 El mapa de inicio arranca **sin rutas ni paradas**: mostrar el catálogo completo satura y no
 ayuda a decidir. Las paradas pertinentes son las que llevan a donde el usuario va, y eso no se
@@ -143,6 +161,25 @@ POST /boarding-signals
 Y en `boarding_signals`, tres columnas opcionales con los mismos nombres. Es aditivo: los
 clientes que no manden esos campos siguen funcionando igual.
 
+## Otra brecha de contrato: `/card-taps` duplica la señal
+
+`POST /card-taps` **crea su propia señal de abordaje** con `stop_id` nulo, en vez de reutilizar
+la que el pasajero ya declaró en la parada. `CLAUDE.md` describe el tap como un atajo que
+"salta directo a abordado, sin pasar por voy a abordar", así que no contempla que exista una
+declaración previa — pero en este flujo siempre existe.
+
+Mientras tanto, la app cierra la señal declarada como `expired` al pasar la tarjeta, para que
+el panel institucional no siga contando a alguien que ya subió. Es un parche: `expired`
+significa "no abordó", que es justo lo contrario de lo que pasó.
+
+Cambio propuesto (**no implementado**): que `/card-taps` acepte un `boarding_signal_id`
+opcional y, cuando venga, marque esa señal como `boarded` en vez de crear otra.
+
+**Y un detalle de operación:** `POST /trips/:id/rating` exige que la señal siga en `boarded`,
+pero `TRIP_DURATION_MS` (20 s por defecto) la pasa sola a `alighted`. En una demo real el viaje
+dura más que eso y la calificación fallaría. Correr el servidor con
+`TRIP_DURATION_MS=600000` mientras se demuestra.
+
 ## Pendientes conocidos
 
 - **Tipografías.** El diseño usa Coolvetica, Nura, Satoshi y League Spartan. Los archivos no
@@ -153,9 +190,8 @@ clientes que no manden esos campos siguen funcionando igual.
   creado al vuelo (`POST /users`), como permite `CLAUDE.md` en esta fase.
 - **Modo conductor (Escenario 3).** Hoy la unidad la mueve el script `server/npm run simulate`;
   falta la pantalla que emita `driver:position` desde el teléfono.
-- **Confirmación de descenso.** El servidor libera el viaje solo tras `TRIP_DURATION_MS`
-  (Escenario 5); falta el botón para que el pasajero confirme que ya se bajó, que es lo que
-  cerraría el par origen-destino con tiempo real de recorrido.
+- **Reporte de incidencias.** `POST /incidents` existe en el contrato y la pantalla de
+  calificación sería su lugar natural; todavía no se conecta.
 - **`better-sqlite3` no compila en Node 24 sin Visual Studio Build Tools.** Es un problema de
   entorno del backend, no de la app; ver la nota en el commit que conectó el mapa.
 - **Identidad visual.** La paleta de estas pantallas (magenta `#E244AE`, lima `#CAFF94`, verde

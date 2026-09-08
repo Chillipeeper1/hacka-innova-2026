@@ -45,6 +45,7 @@ class FakeApi {
     this.etaJson,
     this.etaStatusCode = 200,
     this.boardingStatusCode = 201,
+    this.ratingStatusCode = 201,
   });
 
   final String routesJson;
@@ -55,6 +56,7 @@ class FakeApi {
 
   final int etaStatusCode;
   final int boardingStatusCode;
+  final int ratingStatusCode;
 
   final List<RecordedRequest> requests = [];
 
@@ -92,6 +94,25 @@ class FakeApi {
                     '"distance_km":null,"eta_minutes":null}',
             200,
           );
+        }
+        if (path == '/card-taps') {
+          // El endpoint real crea su propia señal de abordaje; el doble devuelve un id
+          // distinto al declarado en la parada, que es justo lo que hay que manejar.
+          return http.Response(
+            '{"id":9,"card_uid":"DEMO-0001","vehicle_id":1,'
+            '"boarding_signal_id":202}',
+            201,
+          );
+        }
+        if (path.endsWith('/rating')) {
+          if (ratingStatusCode != 201) {
+            return http.Response('{"error":"no hay viaje"}', ratingStatusCode);
+          }
+          return http.Response('{"id":3,"boarding_signal_id":101}', 201);
+        }
+        if (request.method == 'PATCH' &&
+            path.startsWith('/boarding-signals/')) {
+          return http.Response('{"id":101,"status":"ok"}', 200);
         }
         if (path == '/boarding-signals') {
           if (boardingStatusCode != 201) {

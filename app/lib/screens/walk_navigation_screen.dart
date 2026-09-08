@@ -64,7 +64,7 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
             intent: BoardingIntent.boarding,
           );
 
-      ref.read(tripPlanProvider.notifier).markBoarded(signal.id);
+      ref.read(tripPlanProvider.notifier).markWaitingAtStop(signal.id);
       widget.onBoarded?.call();
     } catch (error) {
       if (mounted) {

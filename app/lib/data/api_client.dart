@@ -94,6 +94,48 @@ class ApiClient {
     return BoardingSignal.fromJson(body);
   }
 
+  /// Registra un tap de tarjeta de movilidad (Escenario 6).
+  ///
+  /// OJO: el endpoint **crea su propia señal de abordaje** con `stop_id` nulo y estado
+  /// `boarded`; no reutiliza la que el pasajero ya declaró en la parada. `CLAUDE.md` describe
+  /// el tap como un atajo que "salta directo a abordado, sin pasar por voy a abordar", así que
+  /// no contempla que exista una declaración previa. Ver la nota en `app/README.md`.
+  ///
+  /// Devuelve el `boarding_signal_id` que creó, que es el viaje sobre el que se califica.
+  Future<int> createCardTap({
+    required String cardUid,
+    required int vehicleId,
+  }) async {
+    final response = await _http.post(
+      _uri('/card-taps'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'card_uid': cardUid, 'vehicle_id': vehicleId}),
+    );
+    final body = _decodeMap(response, 'POST /card-taps');
+    return (body['boarding_signal_id'] as num).toInt();
+  }
+
+  /// Califica un viaje (Escenario 7).
+  ///
+  /// El servidor exige que la señal siga en estado `boarded`, así que hay que calificar
+  /// **antes** de marcarla como `alighted`.
+  Future<void> rateTrip({
+    required int boardingSignalId,
+    required int rating,
+    String? comment,
+  }) async {
+    final response = await _http.post(
+      _uri('/trips/$boardingSignalId/rating'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'rating': rating,
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
+      }),
+    );
+    _decodeMap(response, 'POST /trips/$boardingSignalId/rating');
+  }
+
   /// Cambia el estado de una señal: `boarded`, `alighted` o `expired`.
   Future<void> updateBoardingSignal({
     required int signalId,
