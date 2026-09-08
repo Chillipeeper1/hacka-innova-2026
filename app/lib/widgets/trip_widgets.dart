@@ -5,6 +5,8 @@
 /// gente. Se definen una vez para que no se separen al primer ajuste.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -82,10 +84,7 @@ class MapTopControls extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (trailing != null) ...[
-                  SizedBox(height: 26 * s),
-                  trailing!,
-                ],
+                if (trailing != null) ...[SizedBox(height: 26 * s), trailing!],
               ],
             ),
           ),
@@ -141,7 +140,12 @@ class MapInfoCard extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: AppFonts.button,
                         fontFamilyFallback: AppFonts.buttonFallback,
-                        fontSize: fluid(width, designSize: 24, min: 16, max: 25),
+                        fontSize: fluid(
+                          width,
+                          designSize: 24,
+                          min: 16,
+                          max: 25,
+                        ),
                         height: 1.18,
                         color: Colors.black,
                       ),
@@ -392,6 +396,49 @@ class InfoPill extends StatelessWidget {
           fontFamilyFallback: AppFonts.buttonFallback,
           fontSize: fluid(width, designSize: 24, min: 15, max: 24),
           color: foreground,
+        ),
+      ),
+    );
+  }
+}
+
+/// Pildora gris de cancelar.
+///
+/// La comparten el viaje en camion y el viaje en bici: abandonar a medias se ve igual en los
+/// dos, y tenerla dos veces haria que se despeguen al primer ajuste.
+class CancelPill extends StatelessWidget {
+  const CancelPill({
+    super.key,
+    required this.width,
+    this.label = 'cancelar',
+    this.onTap,
+  });
+
+  final double width;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+
+    return SizedBox(
+      width: 178 * s,
+      height: math.max(44 * s, 44),
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          backgroundColor: AppColors.surfaceGrey,
+          foregroundColor: Colors.black,
+          shape: const StadiumBorder(),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppFonts.button,
+            fontFamilyFallback: AppFonts.buttonFallback,
+            fontSize: fluid(width, designSize: 24, min: 16, max: 24),
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -64,6 +65,22 @@ const double alightingRadiusMeters = 60;
 
 /// Tarjeta de movilidad del usuario demo, sembrada por el backend.
 const String demoCardUid = 'DEMO-0001';
+
+/// Velocidad promedio con la que se convierte distancia en tiempo.
+///
+/// Es la misma que usa el servidor en `GET /stops/:id/eta` (`AVERAGE_SPEED_KMH` en
+/// `server/src/routes/stops.ts`). Repetirla aquí evita que la app diga "5 min" mientras el
+/// servidor dice "8" para el mismo trayecto — si allá se ajusta, aquí también.
+const double averageBusSpeedKmh = 15;
+
+/// Minutos que faltan para recorrer [meters] a velocidad de camión.
+///
+/// Nunca devuelve cero: "llega en 0 min" se lee como "ya se fue". Por debajo del minuto se
+/// muestra como 1.
+int minutesForMeters(double meters) {
+  final minutes = meters / (averageBusSpeedKmh * 1000 / 60);
+  return math.max(1, minutes.round());
+}
 
 /// Una forma de llegar al destino: dónde subirse, por qué ruta y dónde bajarse.
 class BoardingOption {

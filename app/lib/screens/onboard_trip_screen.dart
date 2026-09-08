@@ -62,9 +62,8 @@ class OnboardTripScreen extends ConsumerWidget {
       });
     });
 
-    // ~15 km/h, la misma velocidad promedio con la que el servidor calcula sus ETA.
     final minutesLeft =
-        metersLeft == null ? null : math.max(1, (metersLeft / 250).round());
+        metersLeft == null ? null : minutesForMeters(metersLeft);
 
     return Scaffold(
       body: Stack(
@@ -95,7 +94,7 @@ class OnboardTripScreen extends ConsumerWidget {
                           _AlightingWarning(
                             width: width,
                             stopName: option.alightingStop.name,
-                            meters: metersLeft,
+                            minutes: minutesLeft,
                           ),
                         ],
                       ],
@@ -161,7 +160,7 @@ class OnboardTripScreen extends ConsumerWidget {
                           ),
                           SizedBox(height: 14 * s),
                           Center(
-                            child: _CancelPill(width: width, onTap: onCancel),
+                            child: CancelPill(width: width, onTap: onCancel),
                           ),
                         ],
                       ),
@@ -185,12 +184,12 @@ class _AlightingWarning extends StatelessWidget {
   const _AlightingWarning({
     required this.width,
     required this.stopName,
-    required this.meters,
+    required this.minutes,
   });
 
   final double width;
   final String stopName;
-  final double? meters;
+  final int? minutes;
 
   @override
   Widget build(BuildContext context) {
@@ -239,9 +238,9 @@ class _AlightingWarning extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      meters == null
+                      minutes == null
                           ? stopName
-                          : '$stopName · a ${meters!.round()} m',
+                          : '$stopName · en $minutes min',
                       style: TextStyle(
                         fontSize: fluid(
                           width,
@@ -256,39 +255,6 @@ class _AlightingWarning extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CancelPill extends StatelessWidget {
-  const _CancelPill({required this.width, this.onTap});
-
-  final double width;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = scaleFor(width);
-
-    return SizedBox(
-      width: 178 * s,
-      height: math.max(44 * s, 44),
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          backgroundColor: AppColors.surfaceGrey,
-          foregroundColor: Colors.black,
-          shape: const StadiumBorder(),
-        ),
-        child: Text(
-          'cancelar',
-          style: TextStyle(
-            fontFamily: AppFonts.button,
-            fontFamilyFallback: AppFonts.buttonFallback,
-            fontSize: fluid(width, designSize: 24, min: 16, max: 24),
           ),
         ),
       ),

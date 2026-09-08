@@ -121,7 +121,9 @@ void main() {
 
       expect(find.text('Esperando la unidad'), findsOneWidget);
       expect(find.text('Paga con tu tarjeta RFID'), findsNothing);
-      expect(find.textContaining('La unidad está a'), findsOneWidget);
+      // En minutos, no en metros: a quien espera parado en la banqueta los metros no le
+      // dicen nada.
+      expect(find.textContaining('La unidad llega en'), findsOneWidget);
     });
 
     testWidgets('al acercarse la unidad pide el pago', (tester) async {
@@ -290,6 +292,7 @@ void main() {
       final alighting =
           container.read(tripPlanProvider).chosen!.alightingStop.name;
       expect(find.textContaining(alighting), findsWidgets);
+      expect(find.textContaining('min'), findsWidgets);
     });
 
     testWidgets('al llegar a la parada de bajada termina el viaje solo', (

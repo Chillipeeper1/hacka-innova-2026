@@ -190,7 +190,10 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
                             : _WaitingSheet(
                               width: width,
                               maxHeight: constraints.maxHeight,
-                              metersToStop: metersToStop,
+                              minutesToStop:
+                                  metersToStop == null
+                                      ? null
+                                      : minutesForMeters(metersToStop),
                               onCancel: widget.onCancel,
                             ),
                   ),
@@ -209,13 +212,17 @@ class _WaitingSheet extends StatelessWidget {
   const _WaitingSheet({
     required this.width,
     required this.maxHeight,
-    required this.metersToStop,
+    required this.minutesToStop,
     this.onCancel,
   });
 
   final double width;
   final double maxHeight;
-  final double? metersToStop;
+
+  /// Cuánto falta para que llegue la unidad. Se muestra en minutos: los metros no le dicen
+  /// nada a quien espera parado en la banqueta.
+  final int? minutesToStop;
+
   final VoidCallback? onCancel;
 
   @override
@@ -247,14 +254,14 @@ class _WaitingSheet extends StatelessWidget {
             // Sin posición de la unidad no hay distancia que mostrar, y eso es lo normal
             // antes de que el conductor arranque.
             label:
-                metersToStop == null
+                minutesToStop == null
                     ? 'La unidad aún no reporta posición'
-                    : 'La unidad está a ${metersToStop!.round()} m',
+                    : 'La unidad llega en $minutesToStop min',
             background:
-                metersToStop == null
+                minutesToStop == null
                     ? AppColors.fieldStrong
                     : AppColors.magenta,
-            foreground: metersToStop == null ? Colors.black : Colors.white,
+            foreground: minutesToStop == null ? Colors.black : Colors.white,
           ),
           SizedBox(height: 14 * s),
           Text(

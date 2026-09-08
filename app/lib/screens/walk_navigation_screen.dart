@@ -143,7 +143,6 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
                               width: width,
                               maxHeight: constraints.maxHeight,
                               minutes: minutes,
-                              meters: remaining,
                             ),
                   ),
 
@@ -250,13 +249,11 @@ class _WalkSheet extends StatelessWidget {
     required this.width,
     required this.maxHeight,
     required this.minutes,
-    required this.meters,
   });
 
   final double width;
   final double maxHeight;
   final int minutes;
-  final double meters;
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +295,7 @@ class _WalkSheet extends StatelessWidget {
           ),
           SizedBox(height: 10 * s),
           Text(
-            'Te faltan ${meters.round()} m.',
+            'Te faltan $minutes ${minutes == 1 ? 'minuto' : 'minutos'} a pie.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: fluid(width, designSize: 15, min: 13, max: 17),
