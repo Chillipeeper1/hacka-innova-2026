@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/trip_plan.dart';
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Elegir por qué parada subirse.
@@ -120,10 +120,9 @@ class StopPickerScreen extends ConsumerWidget {
   String _subtitleFor(BoardingOption option) {
     final drop = option.metersFromAlightingToDestination.round();
     final walk = option.metersToBoardingStop.round();
-    final dropLabel =
-        option.dropsClose
-            ? 'Te deja a $drop m de tu destino'
-            : 'Te deja a $drop m — algo lejos';
+    final dropLabel = option.dropsClose
+        ? 'Te deja a $drop m de tu destino'
+        : 'Te deja a $drop m — algo lejos';
     return '$dropLabel · caminas $walk m hasta aquí';
   }
 }
@@ -158,53 +157,37 @@ class _PickerMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: options.isEmpty
-            ? Morelia.center
-            : options.first.boardingStop.location,
-        initialZoom: 15,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-
-        // El área crece con la gente que espera: de un vistazo se ve dónde hay fila.
-        CircleLayer(
-          circles: [
-            for (final option in options)
-              CircleMarker(
-                point: option.boardingStop.location,
-                radius: 70 + option.waitingCount * 6,
-                useRadiusInMeter: true,
-                color: (option.isBusy
+    return AppMap(
+      initialCenter: options.isEmpty
+          ? Morelia.center
+          : options.first.boardingStop.location,
+      initialZoom: 15,
+      // El área crece con la gente que espera: de un vistazo se ve dónde hay fila.
+      areas: [
+        for (final option in options)
+          MapArea(
+            id: 'espera-${option.boardingStop.id}',
+            center: option.boardingStop.location,
+            radiusMeters: 70 + option.waitingCount * 6,
+            fill:
+                (option.isBusy
                         ? AppColors.crowdBusyArea
                         : AppColors.crowdFreeArea)
                     .withValues(alpha: option.isBusy ? 0.46 : 0.4),
-                borderStrokeWidth: 0,
-              ),
-          ],
-        ),
-
-        MarkerLayer(
-          markers: [
-            for (final option in options)
-              Marker(
-                point: option.boardingStop.location,
-                width: 26,
-                height: 26,
-                child: CrowdDot(busy: option.isBusy, size: 18),
-              ),
-          ],
-        ),
+          ),
+      ],
+      markers: [
+        for (final option in options)
+          MapMarker(
+            id: 'parada-${option.boardingStop.id}',
+            point: option.boardingStop.location,
+            icon: DotMapIcon(
+              fill: option.isBusy ? AppColors.crowdBusy : AppColors.crowdFree,
+              diameter: 18,
+              borderWidth: 2,
+            ),
+            semanticLabel: 'Parada ${option.boardingStop.name}',
+          ),
       ],
     );
   }

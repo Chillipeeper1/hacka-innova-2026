@@ -16,16 +16,6 @@ class Morelia {
   static const LatLng southWest = LatLng(19.60, -101.32);
   static const LatLng northEast = LatLng(19.80, -101.05);
 
-  /// Teselas de OpenStreetMap.
-  ///
-  /// Sirven para desarrollo y demo. Los servidores comunitarios de OSM prohíben el uso masivo
-  /// desde aplicaciones distribuidas: antes de publicar hay que apuntar a teselas propias o a
-  /// un proveedor con contrato. Ver `documento-base-maas-morelia.md`, sección 3.
-  static const String tileUrlTemplate =
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-  /// Atribución obligatoria: es la licencia de los datos, no un adorno.
-  static const String tileAttribution = '© OpenStreetMap';
-
+  /// Nombre del paquete que se identifica ante servicios de mapas.
   static const String userAgentPackageName = 'mx.maasmorelia.maas_morelia';
 }

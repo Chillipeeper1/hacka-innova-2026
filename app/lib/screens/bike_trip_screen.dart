@@ -1,15 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/bike_network.dart';
 import '../data/bike_trip.dart';
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -115,136 +114,50 @@ class _BikeMap extends StatelessWidget {
     final rider = trip.position;
     final laneAnchor = route.laneLabelAnchor;
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: rider ?? Morelia.center,
-        initialZoom: 15,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        // Encuadra el recorrido completo: lo que hay que entender de un vistazo es por dónde
-        // va la línea, no dónde está la rueda delantera.
-        initialCameraFit: CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(route.points),
-          padding: const EdgeInsets.fromLTRB(48, 190, 48, 240),
-        ),
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-        PolylineLayer(
-          polylines: [
-            for (final segment in route.segments)
-              Polyline(
-                points: segment.points,
-                color: segment.onLane ? AppColors.green : AppColors.walkPath,
-                strokeWidth: segment.onLane ? 9 : 6,
-              ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            if (laneAnchor != null)
-              Marker(
-                point: laneAnchor,
-                width: 190,
-                height: 44,
-                child: const _LaneBadge(),
-              ),
-            if (trip.destination != null)
-              Marker(
-                point: trip.destination!,
-                width: 38,
-                height: 40,
-                child: Semantics(
-                  container: true,
-                  label: 'Tu destino',
-                  child: SvgPicture.asset('assets/icons/flag.svg'),
-                ),
-              ),
-            if (rider != null)
-              Marker(
-                point: rider,
-                width: 40,
-                height: 40,
-                child: const _RiderMarker(),
-              ),
-          ],
-        ),
+    return AppMap(
+      initialCenter: rider ?? Morelia.center,
+      initialZoom: 15,
+      // Encuadra el recorrido completo: lo que hay que entender de un vistazo es por dónde
+      // va la línea, no dónde está la rueda delantera.
+      fitTo: route.points,
+      lines: [
+        for (final (index, segment) in route.segments.indexed)
+          MapLine(
+            id: 'tramo-$index',
+            points: segment.points,
+            color: segment.onLane ? AppColors.green : AppColors.walkPath,
+            width: segment.onLane ? 9 : 6,
+          ),
       ],
-    );
-  }
-}
-
-/// Etiqueta pegada a la línea: dice qué es esa línea verde.
-///
-/// Va en un [FittedBox] porque un marcador tiene tamaño fijo en píxeles del mapa: con el texto
-/// del sistema en grande, sin esto se desbordaría.
-///
-/// Sin `Semantics` encima a propósito: el texto visible ya es la etiqueta, y envolverlo en una
-/// descripción aparte solo haría que un lector de pantalla lea lo mismo dos veces.
-class _LaneBadge extends StatelessWidget {
-  const _LaneBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.green,
-            borderRadius: BorderRadius.circular(AppRadius.floatingCard),
-            boxShadow: AppShadows.floatingCard,
-          ),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(
-              'Ruta por ciclovía',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+      markers: [
+        if (laneAnchor != null)
+          MapMarker(
+            id: 'etiqueta-ciclovia',
+            point: laneAnchor,
+            icon: const LabelMapIcon(
+              text: 'Ruta por ciclovía',
+              background: AppColors.green,
             ),
+            semanticLabel: 'Ruta por ciclovía',
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RiderMarker extends StatelessWidget {
-  const _RiderMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Vas aquí',
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.green, width: 3),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x40000000),
-              blurRadius: 4,
-              offset: Offset(0, 2),
+        if (trip.destination != null)
+          MapMarker(
+            id: 'destino',
+            point: trip.destination!,
+            icon: const SvgMapIcon('assets/icons/flag.svg'),
+            semanticLabel: 'Tu destino',
+          ),
+        if (rider != null)
+          MapMarker(
+            id: 'ciclista',
+            point: rider,
+            icon: const CircledSvgMapIcon(
+              'assets/icons/bicycle.svg',
+              border: AppColors.green,
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(7),
-          child: SvgPicture.asset('assets/icons/bicycle.svg'),
-        ),
-      ),
+            semanticLabel: 'Vas aquí',
+          ),
+      ],
     );
   }
 }

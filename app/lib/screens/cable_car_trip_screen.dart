@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,6 +9,7 @@ import '../data/cable_car_network.dart';
 import '../data/cable_car_trip.dart';
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -203,182 +203,79 @@ class _CableCarMap extends StatelessWidget {
     final rider = trip.position;
     final lineColor = colorFromHex(plan.line.colorHex);
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: rider ?? Morelia.center,
-        initialZoom: 14,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        initialCameraFit: CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(plan.points),
-          padding: const EdgeInsets.fromLTRB(48, 190, 48, 280),
+    return AppMap(
+      initialCenter: rider ?? Morelia.center,
+      initialZoom: 14,
+      fitTo: plan.points,
+      lines: [
+        // La línea completa, tenue: sitúa el viaje dentro de la red en vez de dejarlo
+        // flotando entre dos puntos.
+        MapLine(
+          id: 'linea',
+          points: [for (final station in plan.line.stations) station.location],
+          color: lineColor.withValues(alpha: 0.28),
+          width: 5,
         ),
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-        PolylineLayer(
-          polylines: [
-            // La línea completa, tenue: sitúa el viaje dentro de la red en vez de dejarlo
-            // flotando entre dos puntos.
-            Polyline(
-              points: [
-                for (final station in plan.line.stations) station.location,
-              ],
-              color: lineColor.withValues(alpha: 0.28),
-              strokeWidth: 5,
-            ),
-            for (final leg in plan.legs)
-              Polyline(
-                points: leg.points,
-                color: leg.mode == CableLegMode.cable
-                    ? lineColor
-                    : AppColors.walkPath,
-                strokeWidth: leg.mode == CableLegMode.cable ? 8 : 6,
-              ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            for (final station in plan.line.stations)
-              Marker(
-                point: station.location,
-                width: 18,
-                height: 18,
-                child: _StationDot(color: lineColor),
-              ),
-            Marker(
-              point: plan.boarding.location,
-              width: 190,
-              height: 34,
-              child: _StationBadge(
-                label: 'Subes: ${plan.boarding.name}',
-                color: lineColor,
-              ),
-            ),
-            Marker(
-              point: plan.alighting.location,
-              width: 190,
-              height: 34,
-              child: _StationBadge(
-                label: 'Bajas: ${plan.alighting.name}',
-                color: lineColor,
-              ),
-            ),
-            if (trip.destination != null)
-              Marker(
-                point: trip.destination!,
-                width: 38,
-                height: 40,
-                child: Semantics(
-                  container: true,
-                  label: 'Tu destino',
-                  child: SvgPicture.asset('assets/icons/flag.svg'),
-                ),
-              ),
-            if (rider != null)
-              Marker(
-                point: rider,
-                width: 40,
-                height: 40,
-                child: _RiderMarker(color: lineColor),
-              ),
-          ],
-        ),
+        for (final (index, leg) in plan.legs.indexed)
+          MapLine(
+            id: 'tramo-$index',
+            points: leg.points,
+            color: leg.mode == CableLegMode.cable
+                ? lineColor
+                : AppColors.walkPath,
+            width: leg.mode == CableLegMode.cable ? 8 : 6,
+          ),
       ],
-    );
-  }
-}
-
-class _StationDot extends StatelessWidget {
-  const _StationDot({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: color, width: 3),
-      ),
-    );
-  }
-}
-
-/// Etiqueta de una de las dos estaciones elegidas.
-///
-/// Sin `Semantics` encima: el texto visible ya es la etiqueta. En [FittedBox] porque un
-/// marcador tiene tamaño fijo en píxeles del mapa.
-class _StationBadge extends StatelessWidget {
-  const _StationBadge({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(AppRadius.floatingCard),
-            boxShadow: AppShadows.floatingCard,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+      markers: [
+        for (final (index, station) in plan.line.stations.indexed)
+          MapMarker(
+            id: 'estacion-$index',
+            point: station.location,
+            icon: DotMapIcon(
+              fill: Colors.white,
+              border: lineColor,
+              diameter: 18,
             ),
+            semanticLabel: station.name,
           ),
+        MapMarker(
+          id: 'subida',
+          point: plan.boarding.location,
+          icon: LabelMapIcon(
+            text: 'Subes: ${plan.boarding.name}',
+            background: lineColor,
+            fontSize: 12,
+          ),
+          semanticLabel: 'Subes en ${plan.boarding.name}',
         ),
-      ),
-    );
-  }
-}
-
-class _RiderMarker extends StatelessWidget {
-  const _RiderMarker({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Vas aquí',
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: color, width: 3),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x40000000),
-              blurRadius: 4,
-              offset: Offset(0, 2),
+        MapMarker(
+          id: 'bajada',
+          point: plan.alighting.location,
+          icon: LabelMapIcon(
+            text: 'Bajas: ${plan.alighting.name}',
+            background: lineColor,
+            fontSize: 12,
+          ),
+          semanticLabel: 'Bajas en ${plan.alighting.name}',
+        ),
+        if (trip.destination != null)
+          MapMarker(
+            id: 'destino',
+            point: trip.destination!,
+            icon: const SvgMapIcon('assets/icons/flag.svg'),
+            semanticLabel: 'Tu destino',
+          ),
+        if (rider != null)
+          MapMarker(
+            id: 'pasajero',
+            point: rider,
+            icon: CircledSvgMapIcon(
+              'assets/icons/cable-car.svg',
+              border: lineColor,
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(7),
-          child: SvgPicture.asset('assets/icons/cable-car.svg'),
-        ),
-      ),
+            semanticLabel: 'Vas aquí',
+          ),
+      ],
     );
   }
 }

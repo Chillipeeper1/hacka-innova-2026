@@ -1,13 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
-import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/stop_confirmation.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -65,10 +64,7 @@ class ConfirmStopScreen extends ConsumerWidget {
                     onBack: onBack ?? () => Navigator.maybePop(context),
                     trailing: MapInfoCard(
                       width: width,
-                      lines: [
-                        'Vas hacia la parada:',
-                        option.boardingStop.name,
-                      ],
+                      lines: ['Vas hacia la parada:', option.boardingStop.name],
                     ),
                   ),
                   Align(
@@ -100,35 +96,19 @@ class _ConfirmMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: option.boardingStop.location,
-        initialZoom: 15,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-        CircleLayer(
-          circles: [
-            CircleMarker(
-              point: option.boardingStop.location,
-              radius: 70 + option.waitingCount * 6,
-              useRadiusInMeter: true,
-              color: (option.isBusy
+    return AppMap(
+      initialCenter: option.boardingStop.location,
+      initialZoom: 15,
+      areas: [
+        MapArea(
+          id: 'espera-${option.boardingStop.id}',
+          center: option.boardingStop.location,
+          radiusMeters: 70 + option.waitingCount * 6,
+          fill:
+              (option.isBusy
                       ? AppColors.crowdBusyArea
                       : AppColors.crowdFreeArea)
                   .withValues(alpha: option.isBusy ? 0.46 : 0.4),
-              borderStrokeWidth: 0,
-            ),
-          ],
         ),
       ],
     );

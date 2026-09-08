@@ -71,6 +71,39 @@ paradas del catálogo, sigue la unidad en vivo por WebSocket y registra la confi
 abordaje. Los formularios de acceso siguen siendo maqueta — validan y entregan los datos por
 callback, sin crear cuentas.
 
+## Mapas: hace falta una API key de Google
+
+Los mapas son **Google Maps** (`google_maps_flutter`), no OpenStreetMap. Sin clave no carga
+ninguno y salen en blanco; el resto de la app sigue funcionando.
+
+La clave **no está en el repositorio**. Vive en `.env`, que está en `.gitignore`:
+
+```bash
+cd app
+cp .env.example .env                  # y pon tu clave dentro
+dart run tool/write_maps_key.dart     # genera web/maps-key.js
+```
+
+`web/index.html` sí está en git, así que no puede llevar la clave: carga `web/maps-key.js`, que
+genera ese comando y también está ignorado. Si te saltas el paso, el navegador devuelve un 404
+inofensivo y los mapas quedan vacíos.
+
+El script inyecta la API con `libraries=drawing`. No es opcional: sin esa biblioteca el SDK web
+no dibuja polilíneas, círculos ni marcadores, que es casi todo lo que la app pinta encima del
+mapa.
+
+La clave se saca de Google Cloud con la **Maps JavaScript API** habilitada, y con cuenta de
+facturación activa (Google la exige incluso para el nivel gratuito).
+
+Un matiz que conviene no malinterpretar: una clave de navegador es **pública por naturaleza**,
+acaba dentro del HTML y se ve en el código fuente de la página. Tenerla fuera de git evita que
+quede en el historial y que se la lleve quien clone el repo, pero lo que de verdad la protege es
+**restringirla por referente HTTP** en la consola de Google Cloud — para la demo, `localhost:8080`.
+
+Para Android hace falta además la clave en `android/app/src/main/AndroidManifest.xml`, y para
+iOS en `ios/Runner/AppDelegate.swift`; hoy solo está cableado el lado web, que es donde corre la
+demo.
+
 ## Correrlo con el backend
 
 ```

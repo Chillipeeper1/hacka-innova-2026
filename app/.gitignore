@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Claves locales. La de Google Maps vive en .env, y de ahí se genera web/maps-key.js con
+# `dart run tool/write_maps_key.dart`. Ninguno de los dos debe entrar a git.
+.env
+web/maps-key.js

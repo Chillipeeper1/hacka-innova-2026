@@ -3,12 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/branding.dart';
 import '../widgets/inputs.dart';
 import '../widgets/map_chrome.dart';
@@ -66,24 +66,10 @@ class _DestinationScreenState extends State<DestinationScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: widget.initialCenter,
-              initialZoom: 16,
-              minZoom: Morelia.minZoom,
-              maxZoom: Morelia.maxZoom,
-              cameraConstraint: CameraConstraint.containCenter(
-                bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-              ),
-              onPositionChanged: (camera, _) => _picked.value = camera.center,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: Morelia.tileUrlTemplate,
-                userAgentPackageName: Morelia.userAgentPackageName,
-                maxZoom: Morelia.maxZoom,
-              ),
-            ],
+          AppMap(
+            initialCenter: widget.initialCenter,
+            initialZoom: 16,
+            onCameraMove: (center) => _picked.value = center,
           ),
 
           LayoutBuilder(
@@ -156,8 +142,7 @@ class _DestinationScreenState extends State<DestinationScreen> {
                       width: width,
                       maxHeight: constraints.maxHeight,
                       picked: _picked,
-                      onConfirm:
-                          () => widget.onConfirm?.call(_picked.value),
+                      onConfirm: () => widget.onConfirm?.call(_picked.value),
                     ),
                   ),
                 ],

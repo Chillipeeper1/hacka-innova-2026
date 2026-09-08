@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/screens/home_screen.dart';
+import 'package:maas_morelia/widgets/app_map.dart';
 import 'package:maas_morelia/theme.dart';
 import 'package:maas_morelia/widgets/map_chrome.dart';
 
@@ -108,9 +108,11 @@ void main() {
     await pumpAt(tester, const Size(402, 874));
     expectNoLayoutError(tester, 'mapa limpio');
 
-    expect(find.byType(FlutterMap), findsOneWidget);
-    expect(find.byType(TileLayer), findsOneWidget);
-    expect(find.byType(PolylineLayer), findsNothing);
+    final map = tester.widget<AppMap>(find.byType(AppMap));
+    expect(map.lines, isEmpty);
+    expect(map.areas, isEmpty);
+    // El único marcador es el propio usuario.
+    expect(map.markers, hasLength(1));
     expect(find.bySemanticsLabel('Parada Catedral de Morelia'), findsNothing);
     expect(find.bySemanticsLabel('Unidad en ruta'), findsNothing);
   });
@@ -135,15 +137,6 @@ void main() {
     expectNoLayoutError(tester, 'desconectado');
 
     expect(find.textContaining('tiempo real'), findsOneWidget);
-  });
-
-  testWidgets('atribuye a OpenStreetMap, como exige la licencia', (
-    tester,
-  ) async {
-    await pumpAt(tester, const Size(402, 874));
-    expectNoLayoutError(tester, 'atribución');
-
-    expect(find.textContaining('OpenStreetMap'), findsOneWidget);
   });
 
   testWidgets('los controles del mapa son accesibles por lector de pantalla', (

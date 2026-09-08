@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/walk_route.dart';
 import 'package:maas_morelia/data/walk_trip.dart';
+import 'package:maas_morelia/widgets/app_map.dart';
 import 'package:maas_morelia/screens/walk_trip_screen.dart';
 import 'package:maas_morelia/theme.dart';
 
@@ -120,11 +120,15 @@ void main() {
     await pumpAt(tester, const Size(402, 874));
     expectNoLayoutError(tester, 'zonas');
 
-    final circles = tester.widget<CircleLayer>(find.byType(CircleLayer));
-    expect(circles.circles, hasLength(moreliaUnsafeZones.length));
+    final map = tester.widget<AppMap>(find.byType(AppMap));
+    expect(map.areas, hasLength(moreliaUnsafeZones.length));
 
-    // Y la que sí estorba se ve, con su motivo.
-    expect(find.text('Tramo sin alumbrado'), findsOneWidget);
+    // Y cada una lleva su motivo escrito encima.
+    final motivos = map.markers
+        .map((marker) => marker.icon)
+        .whereType<LabelMapIcon>()
+        .map((icon) => icon.text);
+    expect(motivos, contains('Tramo sin alumbrado'));
     stopWalking();
   });
 

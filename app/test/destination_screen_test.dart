@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/morelia.dart';
+import 'package:maas_morelia/widgets/app_map.dart';
 import 'package:maas_morelia/screens/destination_screen.dart';
 import 'package:maas_morelia/theme.dart';
 
@@ -155,8 +155,9 @@ void main() {
     await pumpAt(tester, const Size(402, 874));
     expectNoLayoutError(tester, 'mapa');
 
-    final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
-    expect(map.options.cameraConstraint, isA<ContainCameraCenter>());
+    // El acotado a Morelia vive ahora dentro de AppMap, que es quien habla con el motor
+    // de mapas. Aquí basta comprobar que la pantalla usa ese mapa y no otro.
+    expect(find.byType(AppMap), findsOneWidget);
   });
 
   testWidgets('los controles no se estiran en escritorio', (tester) async {

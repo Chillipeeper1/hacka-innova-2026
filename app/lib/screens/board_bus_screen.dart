@@ -1,14 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
-import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Esperar la unidad en la parada y subirse.
@@ -68,10 +66,7 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
       // demanda no quede inflado.
       final declared = ref.read(tripPlanProvider).boardingSignalId;
       if (declared != null && declared != tapSignalId) {
-        await api.updateBoardingSignal(
-          signalId: declared,
-          status: 'expired',
-        );
+        await api.updateBoardingSignal(signalId: declared, status: 'expired');
       }
 
       ref
@@ -149,8 +144,7 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
       });
     });
 
-    final awaitingPayment =
-        arriving || plan.stage == TripStage.awaitingPayment;
+    final awaitingPayment = arriving || plan.stage == TripStage.awaitingPayment;
 
     return Scaffold(
       body: Stack(
@@ -175,27 +169,24 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
                   ),
                   Align(
                     alignment: Alignment.bottomCenter,
-                    child:
-                        awaitingPayment
-                            ? _PaymentSheet(
-                              width: width,
-                              maxHeight: constraints.maxHeight,
-                              busy: _submitting,
-                              error: _error,
-                              onTapCard:
-                                  vehicle == null
-                                      ? null
-                                      : () => _payWithCard(vehicle.vehicleId),
-                            )
-                            : _WaitingSheet(
-                              width: width,
-                              maxHeight: constraints.maxHeight,
-                              minutesToStop:
-                                  metersToStop == null
-                                      ? null
-                                      : minutesForMeters(metersToStop),
-                              onCancel: widget.onCancel,
-                            ),
+                    child: awaitingPayment
+                        ? _PaymentSheet(
+                            width: width,
+                            maxHeight: constraints.maxHeight,
+                            busy: _submitting,
+                            error: _error,
+                            onTapCard: vehicle == null
+                                ? null
+                                : () => _payWithCard(vehicle.vehicleId),
+                          )
+                        : _WaitingSheet(
+                            width: width,
+                            maxHeight: constraints.maxHeight,
+                            minutesToStop: metersToStop == null
+                                ? null
+                                : minutesForMeters(metersToStop),
+                            onCancel: widget.onCancel,
+                          ),
                   ),
                 ],
               );
@@ -253,14 +244,12 @@ class _WaitingSheet extends StatelessWidget {
             width: width,
             // Sin posición de la unidad no hay distancia que mostrar, y eso es lo normal
             // antes de que el conductor arranque.
-            label:
-                minutesToStop == null
-                    ? 'La unidad aún no reporta posición'
-                    : 'La unidad llega en $minutesToStop min',
-            background:
-                minutesToStop == null
-                    ? AppColors.fieldStrong
-                    : AppColors.magenta,
+            label: minutesToStop == null
+                ? 'La unidad aún no reporta posición'
+                : 'La unidad llega en $minutesToStop min',
+            background: minutesToStop == null
+                ? AppColors.fieldStrong
+                : AppColors.magenta,
             foreground: minutesToStop == null ? Colors.black : Colors.white,
           ),
           SizedBox(height: 14 * s),
@@ -273,7 +262,9 @@ class _WaitingSheet extends StatelessWidget {
             ),
           ),
           SizedBox(height: 16 * s),
-          Center(child: _CancelButton(width: width, onTap: onCancel)),
+          Center(
+            child: _CancelButton(width: width, onTap: onCancel),
+          ),
         ],
       ),
     );
@@ -320,11 +311,7 @@ class _PaymentSheet extends StatelessWidget {
             ),
           ),
           SizedBox(height: 14 * s),
-          Icon(
-            Icons.contactless,
-            size: 64 * s,
-            color: AppColors.magenta,
-          ),
+          Icon(Icons.contactless, size: 64 * s, color: AppColors.magenta),
           SizedBox(height: 14 * s),
           Text(
             'Acerca tu tarjeta al lector de la unidad.',
@@ -359,29 +346,28 @@ class _PaymentSheet extends StatelessWidget {
             height: math.max(48 * s, 48),
             child: FilledButton(
               onPressed: busy ? null : onTapCard,
-              child:
-                  busy
-                      ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                      : Text(
-                        'Pasar tarjeta',
-                        style: TextStyle(
-                          fontFamily: AppFonts.button,
-                          fontFamilyFallback: AppFonts.buttonFallback,
-                          fontSize: fluid(
-                            width,
-                            designSize: 24,
-                            min: 17,
-                            max: 25,
-                          ),
-                          color: Colors.white,
-                        ),
+              child: busy
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
+                    )
+                  : Text(
+                      'Pasar tarjeta',
+                      style: TextStyle(
+                        fontFamily: AppFonts.button,
+                        fontFamilyFallback: AppFonts.buttonFallback,
+                        fontSize: fluid(
+                          width,
+                          designSize: 24,
+                          min: 17,
+                          max: 25,
+                        ),
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -435,66 +421,30 @@ class _BoardingMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final routeColor = colorFromHex(option.route.colorHex);
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: option.boardingStop.location,
-        initialZoom: 15.5,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
+    return AppMap(
+      initialCenter: option.boardingStop.location,
+      initialZoom: 15.5,
+      lines: [
+        MapLine(
+          id: 'ruta-${option.route.id}',
+          points: option.route.shape,
+          color: routeColor.withValues(alpha: 0.85),
         ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
+      ],
+      markers: [
+        MapMarker(
+          id: 'parada',
+          point: option.boardingStop.location,
+          icon: const SvgMapIcon('assets/icons/pin-dark.svg'),
+          semanticLabel: 'Tu parada',
         ),
-        PolylineLayer(
-          polylines: [
-            Polyline(
-              points: option.route.shape,
-              color: routeColor.withValues(alpha: 0.85),
-              strokeWidth: 6,
-            ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: option.boardingStop.location,
-              width: 38,
-              height: 44,
-              child: Semantics(
-                container: true,
-                label: 'Tu parada',
-                child: SvgPicture.asset('assets/icons/pin-dark.svg'),
-              ),
-            ),
-            if (vehicle != null)
-              Marker(
-                point: vehicle.location,
-                width: 40,
-                height: 40,
-                child: Semantics(
-                  container: true,
-                  label: 'Unidad en ruta',
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: routeColor, width: 3),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(7),
-                      child: SvgPicture.asset('assets/icons/bus.svg'),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        if (vehicle != null)
+          MapMarker(
+            id: 'unidad',
+            point: vehicle.location,
+            icon: CircledSvgMapIcon('assets/icons/bus.svg', border: routeColor),
+            semanticLabel: 'Unidad en ruta',
+          ),
       ],
     );
   }

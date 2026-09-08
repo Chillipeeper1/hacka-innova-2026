@@ -1,14 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../data/models.dart';
 import '../data/trip_plan.dart';
-import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/trip_widgets.dart';
 
 /// "En viaje": el pasajero va a bordo.
@@ -62,8 +60,9 @@ class OnboardTripScreen extends ConsumerWidget {
       });
     });
 
-    final minutesLeft =
-        metersLeft == null ? null : minutesForMeters(metersLeft);
+    final minutesLeft = metersLeft == null
+        ? null
+        : minutesForMeters(metersLeft);
 
     return Scaffold(
       body: Stack(
@@ -129,18 +128,15 @@ class OnboardTripScreen extends ConsumerWidget {
                           SizedBox(height: 16 * s),
                           InfoPill(
                             width: width,
-                            label:
-                                minutesLeft == null
-                                    ? 'Calculando lo que falta...'
-                                    : 'Llegada estimada: $minutesLeft min',
-                            background:
-                                minutesLeft == null
-                                    ? AppColors.fieldStrong
-                                    : AppColors.magenta,
-                            foreground:
-                                minutesLeft == null
-                                    ? Colors.black
-                                    : Colors.white,
+                            label: minutesLeft == null
+                                ? 'Calculando lo que falta...'
+                                : 'Llegada estimada: $minutesLeft min',
+                            background: minutesLeft == null
+                                ? AppColors.fieldStrong
+                                : AppColors.magenta,
+                            foreground: minutesLeft == null
+                                ? Colors.black
+                                : Colors.white,
                           ),
                           SizedBox(height: 10 * s),
                           Text(
@@ -209,10 +205,7 @@ class _AlightingWarning extends StatelessWidget {
             color: AppColors.mint,
             borderRadius: BorderRadius.circular(AppRadius.floatingCard),
           ),
-          padding: EdgeInsets.symmetric(
-            horizontal: 20 * s,
-            vertical: 16 * s,
-          ),
+          padding: EdgeInsets.symmetric(horizontal: 20 * s, vertical: 16 * s),
           child: Row(
             children: [
               Icon(Icons.notifications_active, size: 26 * s),
@@ -273,80 +266,42 @@ class _OnboardMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final routeColor = colorFromHex(option.route.colorHex);
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: vehicle?.location ?? option.boardingStop.location,
-        initialZoom: 15.5,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
+    return AppMap(
+      initialCenter: vehicle?.location ?? option.boardingStop.location,
+      initialZoom: 15.5,
+      lines: [
+        MapLine(
+          id: 'ruta',
+          points: option.route.shape,
+          color: routeColor.withValues(alpha: 0.7),
         ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
+        // El tramo ya recorrido, en el azul del diseño.
+        if (vehicle != null)
+          MapLine(
+            id: 'recorrido',
+            points: [option.boardingStop.location, vehicle!.location],
+            color: AppColors.walkPath,
+            width: 8,
+          ),
+      ],
+      markers: [
+        MapMarker(
+          id: 'bajada',
+          point: option.alightingStop.location,
+          icon: const SvgMapIcon(
+            'assets/icons/flag.svg',
+            width: 38,
+            height: 40,
+          ),
+          semanticLabel: 'Bajas en ${option.alightingStop.name}',
         ),
-        PolylineLayer(
-          polylines: [
-            Polyline(
-              points: option.route.shape,
-              color: routeColor.withValues(alpha: 0.7),
-              strokeWidth: 6,
-            ),
-            // El tramo ya recorrido, en el azul del diseño.
-            if (vehicle != null)
-              Polyline(
-                points: [option.boardingStop.location, vehicle!.location],
-                color: AppColors.walkPath,
-                strokeWidth: 8,
-              ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: option.alightingStop.location,
-              width: 38,
-              height: 40,
-              child: Semantics(
-                container: true,
-                label: 'Bajas en ${option.alightingStop.name}',
-                child: SvgPicture.asset('assets/icons/flag.svg'),
-              ),
-            ),
-            if (vehicle != null)
-              Marker(
-                point: vehicle!.location,
-                width: 40,
-                height: 40,
-                child: Semantics(
-                  container: true,
-                  label: 'Vas aquí',
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: routeColor, width: 3),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x40000000),
-                          blurRadius: 4,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(7),
-                      child: SvgPicture.asset('assets/icons/bus.svg'),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        if (vehicle != null)
+          MapMarker(
+            id: 'unidad',
+            point: vehicle!.location,
+            icon: CircledSvgMapIcon('assets/icons/bus.svg', border: routeColor),
+            semanticLabel: 'Vas aquí',
+          ),
       ],
     );
   }

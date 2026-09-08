@@ -1,15 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/walk_route.dart';
 import '../data/walk_trip.dart';
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -113,147 +112,60 @@ class _WalkTripMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final walker = trip.position;
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: walker ?? Morelia.center,
-        initialZoom: 15,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        // Encuadra el recorrido completo, para que el rodeo se entienda de un vistazo.
-        initialCameraFit: CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(route.points),
-          padding: const EdgeInsets.fromLTRB(48, 190, 48, 250),
-        ),
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-        CircleLayer(
-          circles: [
-            for (final zone in moreliaUnsafeZones)
-              CircleMarker(
-                point: zone.center,
-                radius: zone.radiusMeters,
-                useRadiusInMeter: true,
-                color: AppColors.unsafeZoneArea.withValues(alpha: 0.22),
-                borderColor: AppColors.unsafeZone.withValues(alpha: 0.75),
-                borderStrokeWidth: 2,
-              ),
-          ],
-        ),
-        PolylineLayer(
-          polylines: [
-            Polyline(
-              points: route.points,
-              color: AppColors.walkPath,
-              strokeWidth: 7,
-            ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            for (final zone in moreliaUnsafeZones)
-              Marker(
-                point: zone.center,
-                width: 170,
-                height: 34,
-                child: _ZoneBadge(reason: zone.reason),
-              ),
-            if (trip.destination != null)
-              Marker(
-                point: trip.destination!,
-                width: 38,
-                height: 40,
-                child: Semantics(
-                  container: true,
-                  label: 'Tu destino',
-                  child: SvgPicture.asset('assets/icons/flag.svg'),
-                ),
-              ),
-            if (walker != null)
-              Marker(
-                point: walker,
-                width: 40,
-                height: 40,
-                child: const _WalkerMarker(),
-              ),
-          ],
+    return AppMap(
+      initialCenter: walker ?? Morelia.center,
+      initialZoom: 15,
+      // Encuadra el recorrido completo, para que el rodeo se entienda de un vistazo.
+      fitTo: route.points,
+      areas: [
+        for (final (index, zone) in moreliaUnsafeZones.indexed)
+          MapArea(
+            id: 'zona-$index',
+            center: zone.center,
+            radiusMeters: zone.radiusMeters,
+            fill: AppColors.unsafeZoneArea.withValues(alpha: 0.22),
+            border: AppColors.unsafeZone.withValues(alpha: 0.75),
+            borderWidth: 2,
+          ),
+      ],
+      lines: [
+        MapLine(
+          id: 'camino',
+          points: route.points,
+          color: AppColors.walkPath,
+          width: 7,
         ),
       ],
-    );
-  }
-}
-
-/// Etiqueta sobre una zona marcada: dice por qué está marcada.
-///
-/// Sin `Semantics` encima a propósito: el texto visible ya es la etiqueta. Va en un [FittedBox]
-/// porque un marcador tiene tamaño fijo en píxeles del mapa y el texto del sistema puede venir
-/// en grande.
-class _ZoneBadge extends StatelessWidget {
-  const _ZoneBadge({required this.reason});
-
-  final String reason;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.unsafeZone,
-            borderRadius: BorderRadius.circular(AppRadius.floatingCard),
-            boxShadow: AppShadows.floatingCard,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            child: Text(
-              reason,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+      markers: [
+        for (final (index, zone) in moreliaUnsafeZones.indexed)
+          MapMarker(
+            id: 'etiqueta-zona-$index',
+            point: zone.center,
+            icon: LabelMapIcon(
+              text: zone.reason,
+              background: AppColors.unsafeZone,
+              fontSize: 12,
             ),
+            semanticLabel: 'Zona no recomendada: ${zone.reason}',
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WalkerMarker extends StatelessWidget {
-  const _WalkerMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Vas aquí',
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.walkPath, width: 3),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x40000000),
-              blurRadius: 4,
-              offset: Offset(0, 2),
+        if (trip.destination != null)
+          MapMarker(
+            id: 'destino',
+            point: trip.destination!,
+            icon: const SvgMapIcon('assets/icons/flag.svg'),
+            semanticLabel: 'Tu destino',
+          ),
+        if (walker != null)
+          MapMarker(
+            id: 'peaton',
+            point: walker,
+            icon: const CircledSvgMapIcon(
+              'assets/icons/walk.svg',
+              border: AppColors.walkPath,
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: SvgPicture.asset('assets/icons/walk.svg'),
-        ),
-      ),
+            semanticLabel: 'Vas aquí',
+          ),
+      ],
     );
   }
 }

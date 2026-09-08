@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
 import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/map_chrome.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -74,9 +74,6 @@ class HomeScreen extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // La atribución va pegada encima de la hoja porque la hoja tapa la
-                        // esquina inferior derecha, que es donde iría por convención.
-                        _MapAttribution(width: width),
                         _TravelSheet(
                           width: width,
                           maxHeight: constraints.maxHeight,
@@ -108,61 +105,17 @@ class _MoreliaMap extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final position = ref.watch(userLocationProvider);
 
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: Morelia.center,
-        initialZoom: Morelia.defaultZoom,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        // Sin esto, un arrastrón manda la cámara al otro lado del mundo, donde el mockup no
-        // tiene nada que mostrar.
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
-        ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: position,
-              width: 22,
-              height: 22,
-              child: const _UserLocationDot(),
-            ),
-          ],
+    return AppMap(
+      initialCenter: Morelia.center,
+      initialZoom: Morelia.defaultZoom,
+      markers: [
+        MapMarker(
+          id: 'usuario',
+          point: position,
+          icon: const DotMapIcon(fill: Color(0xFF2E7DF6)),
+          semanticLabel: 'Tu posición',
         ),
       ],
-    );
-  }
-}
-
-class _UserLocationDot extends StatelessWidget {
-  const _UserLocationDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Tu posición',
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF2E7DF6),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 4,
-              offset: Offset(0, 1),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -265,47 +218,6 @@ class _TravelSheet extends StatelessWidget {
             onTap: onTravelByCableCar,
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Atribución de OpenStreetMap.
-///
-/// Es requisito de la licencia de los datos, no un adorno. No se usa
-/// `SimpleAttributionWidget` de flutter_map porque antepone su propio "© " —dejando
-/// "© © OpenStreetMap"— y su fila no puede encoger, así que desborda en pantallas angostas.
-class _MapAttribution extends StatelessWidget {
-  const _MapAttribution({required this.width});
-
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    final gutter = gutterFor(width);
-
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 8),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.82),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              child: Text(
-                Morelia.tileAttribution,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: Colors.black87),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

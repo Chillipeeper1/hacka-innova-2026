@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,8 +9,8 @@ import '../data/models.dart';
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
 import '../data/walk_route.dart';
-import '../morelia.dart';
 import '../theme.dart';
+import '../widgets/app_map.dart';
 import '../widgets/stop_confirmation.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -179,60 +178,33 @@ class _WalkMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: position,
-        initialZoom: 16,
-        minZoom: Morelia.minZoom,
-        maxZoom: Morelia.maxZoom,
-        cameraConstraint: CameraConstraint.containCenter(
-          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
+    return AppMap(
+      initialCenter: position,
+      initialZoom: 16,
+      lines: [
+        MapLine(
+          id: 'caminata',
+          points: [position, option.boardingStop.location],
+          color: AppColors.walkPath,
+          width: 8,
         ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: Morelia.tileUrlTemplate,
-          userAgentPackageName: Morelia.userAgentPackageName,
-          maxZoom: Morelia.maxZoom,
+      ],
+      markers: [
+        MapMarker(
+          id: 'parada',
+          point: option.boardingStop.location,
+          icon: const SvgMapIcon(
+            'assets/icons/pin-dark.svg',
+            width: 40,
+            height: 46,
+          ),
+          semanticLabel: 'Parada ${option.boardingStop.name}',
         ),
-        PolylineLayer(
-          polylines: [
-            Polyline(
-              points: [position, option.boardingStop.location],
-              color: AppColors.walkPath,
-              strokeWidth: 8,
-            ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: option.boardingStop.location,
-              width: 40,
-              height: 46,
-              child: Semantics(
-                container: true,
-                label: 'Parada ${option.boardingStop.name}',
-                child: SvgPicture.asset('assets/icons/pin-dark.svg'),
-              ),
-            ),
-            Marker(
-              point: position,
-              width: 22,
-              height: 22,
-              child: Semantics(
-                container: true,
-                label: 'Tu posición',
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2E7DF6),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        MapMarker(
+          id: 'usuario',
+          point: position,
+          icon: const DotMapIcon(fill: Color(0xFF2E7DF6)),
+          semanticLabel: 'Tu posición',
         ),
       ],
     );

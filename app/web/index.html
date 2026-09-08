@@ -31,6 +31,18 @@
 
   <title>maas_morelia</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Google Maps JavaScript API.
+
+    La clave NO va aquí: este archivo sí está en git. Vive en `.env` (ignorado), y
+    `dart run tool/write_maps_key.dart` genera `maps-key.js` —también ignorado— que carga la
+    API con ella. Sin ese paso el archivo no existe, el navegador devuelve un 404 inofensivo y
+    los mapas salen en blanco; el resto de la app sigue funcionando.
+
+    Ver `README.md`, sección "Mapas".
+  -->
+  <script src="maps-key.js"></script>
 </head>
 <body>
   <!--

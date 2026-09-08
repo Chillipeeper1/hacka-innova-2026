@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/bike_trip.dart';
+import 'package:maas_morelia/widgets/app_map.dart';
 import 'package:maas_morelia/screens/bike_trip_screen.dart';
 import 'package:maas_morelia/theme.dart';
 
@@ -114,7 +115,14 @@ void main() {
     expectNoLayoutError(tester, 'etiqueta de ciclovía');
 
     // Pegada a la línea, sobre el mapa: es la línea la que tiene que explicarse sola.
-    expect(find.text('Ruta por ciclovía'), findsOneWidget);
+    // Google Maps dibuja los marcadores como imagen, así que se afirma sobre lo que la
+    // pantalla le pide al mapa, no sobre un widget de texto que ya no existe.
+    final map = tester.widget<AppMap>(find.byType(AppMap));
+    final etiquetas = map.markers
+        .map((marker) => marker.icon)
+        .whereType<LabelMapIcon>()
+        .map((icon) => icon.text);
+    expect(etiquetas, contains('Ruta por ciclovía'));
 
     // Y en la hoja, con el nombre de la ciclovía que se está usando.
     expect(
