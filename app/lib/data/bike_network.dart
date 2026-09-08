@@ -16,6 +16,8 @@ import 'dart:math' as math;
 
 import 'package:latlong2/latlong.dart';
 
+import 'path_geometry.dart';
+
 const Distance _distance = Distance();
 
 /// Velocidad con la que se convierte distancia en tiempo.
@@ -169,22 +171,7 @@ class BikeRoute {
   ///
   /// Es lo que mueve al ciclista sobre la línea en vez de en línea recta al destino: si el
   /// recorrido se desvía por una ciclovía, el marcador se desvía con él.
-  LatLng pointAt(double meters) {
-    final path = points;
-    if (path.isEmpty) return const LatLng(0, 0);
-    if (meters <= 0) return path.first;
-
-    var left = meters;
-    for (var i = 0; i < path.length - 1; i++) {
-      final legMeters = _distance(path[i], path[i + 1]);
-      if (left <= legMeters) {
-        final fraction = legMeters == 0 ? 0.0 : left / legMeters;
-        return _lerp(path[i], path[i + 1], fraction);
-      }
-      left -= legMeters;
-    }
-    return path.last;
-  }
+  LatLng pointAt(double meters) => pointAlongPath(points, meters);
 
   /// Dónde colgar la etiqueta "ruta por ciclovía": a media altura del tramo protegido más
   /// largo, que es donde se entiende a qué línea se refiere.
@@ -196,23 +183,9 @@ class BikeRoute {
     }
     if (longest == null) return null;
 
-    var left = longest.meters / 2;
-    for (var i = 0; i < longest.points.length - 1; i++) {
-      final legMeters = _distance(longest.points[i], longest.points[i + 1]);
-      if (left <= legMeters) {
-        final fraction = legMeters == 0 ? 0.0 : left / legMeters;
-        return _lerp(longest.points[i], longest.points[i + 1], fraction);
-      }
-      left -= legMeters;
-    }
-    return longest.points.last;
+    return pointAlongPath(longest.points, longest.meters / 2);
   }
 }
-
-LatLng _lerp(LatLng a, LatLng b, double t) => LatLng(
-  a.latitude + (b.latitude - a.latitude) * t,
-  a.longitude + (b.longitude - a.longitude) * t,
-);
 
 /// Arista del grafo de ruteo.
 class _Edge {

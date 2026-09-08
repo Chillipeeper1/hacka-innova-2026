@@ -1,0 +1,424 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../data/walk_route.dart';
+import '../data/walk_trip.dart';
+import '../morelia.dart';
+import '../theme.dart';
+import '../widgets/inputs.dart';
+import '../widgets/trip_widgets.dart';
+
+/// Viaje a pie, de punta a punta en una sola pantalla.
+///
+/// No hay diseño de Figma; sigue el patrón de las otras pantallas del viaje.
+///
+/// Las zonas marcadas se dibujan **siempre**, estorben o no al trazado. Enseñar solo las que se
+/// rodearon dejaría creer que el resto del mapa fue revisado y salió limpio, que es justo lo
+/// que estos datos no pueden sostener.
+class WalkTripScreen extends ConsumerWidget {
+  const WalkTripScreen({
+    super.key,
+    this.onMenu,
+    this.onProfile,
+    this.onFinished,
+    this.onCancel,
+  });
+
+  final VoidCallback? onMenu;
+  final VoidCallback? onProfile;
+
+  /// Se llama al terminar el viaje, ya sea porque llegó o porque lo abandonó.
+  final VoidCallback? onFinished;
+
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trip = ref.watch(walkTripProvider);
+    final route = trip.route;
+
+    if (route == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('A pie')),
+        body: const Center(child: Text('No tienes un viaje en curso.')),
+      );
+    }
+
+    final arrived = trip.stage == WalkStage.arrived;
+
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _WalkTripMap(trip: trip, route: route),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = math.min(constraints.maxWidth, maxContentWidth);
+
+              return Stack(
+                children: [
+                  MapTopControls(
+                    width: width,
+                    onMenu: onMenu,
+                    onProfile: onProfile,
+                    trailing: MapInfoCard(
+                      width: width,
+                      asset: 'assets/icons/walk.svg',
+                      lines: [
+                        arrived ? 'Llegaste a:' : 'Vas hacia:',
+                        _formatPoint(trip.destination),
+                      ],
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: _WalkTripSheet(
+                      width: width,
+                      maxHeight: constraints.maxHeight,
+                      trip: trip,
+                      route: route,
+                      onFinished: onFinished,
+                      onCancel: onCancel,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatPoint(LatLng? point) {
+  if (point == null) return 'tu destino';
+  return '${point.latitude.toStringAsFixed(5)}, '
+      '${point.longitude.toStringAsFixed(5)}';
+}
+
+/// Mapa con las zonas marcadas, el camino y quien camina.
+class _WalkTripMap extends StatelessWidget {
+  const _WalkTripMap({required this.trip, required this.route});
+
+  final WalkTrip trip;
+  final WalkRoute route;
+
+  @override
+  Widget build(BuildContext context) {
+    final walker = trip.position;
+
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: walker ?? Morelia.center,
+        initialZoom: 15,
+        minZoom: Morelia.minZoom,
+        maxZoom: Morelia.maxZoom,
+        // Encuadra el recorrido completo, para que el rodeo se entienda de un vistazo.
+        initialCameraFit: CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(route.points),
+          padding: const EdgeInsets.fromLTRB(48, 190, 48, 250),
+        ),
+        cameraConstraint: CameraConstraint.containCenter(
+          bounds: LatLngBounds(Morelia.southWest, Morelia.northEast),
+        ),
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: Morelia.tileUrlTemplate,
+          userAgentPackageName: Morelia.userAgentPackageName,
+          maxZoom: Morelia.maxZoom,
+        ),
+        CircleLayer(
+          circles: [
+            for (final zone in moreliaUnsafeZones)
+              CircleMarker(
+                point: zone.center,
+                radius: zone.radiusMeters,
+                useRadiusInMeter: true,
+                color: AppColors.unsafeZoneArea.withValues(alpha: 0.22),
+                borderColor: AppColors.unsafeZone.withValues(alpha: 0.75),
+                borderStrokeWidth: 2,
+              ),
+          ],
+        ),
+        PolylineLayer(
+          polylines: [
+            Polyline(
+              points: route.points,
+              color: AppColors.walkPath,
+              strokeWidth: 7,
+            ),
+          ],
+        ),
+        MarkerLayer(
+          markers: [
+            for (final zone in moreliaUnsafeZones)
+              Marker(
+                point: zone.center,
+                width: 170,
+                height: 34,
+                child: _ZoneBadge(reason: zone.reason),
+              ),
+            if (trip.destination != null)
+              Marker(
+                point: trip.destination!,
+                width: 38,
+                height: 40,
+                child: Semantics(
+                  container: true,
+                  label: 'Tu destino',
+                  child: SvgPicture.asset('assets/icons/flag.svg'),
+                ),
+              ),
+            if (walker != null)
+              Marker(
+                point: walker,
+                width: 40,
+                height: 40,
+                child: const _WalkerMarker(),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Etiqueta sobre una zona marcada: dice por qué está marcada.
+///
+/// Sin `Semantics` encima a propósito: el texto visible ya es la etiqueta. Va en un [FittedBox]
+/// porque un marcador tiene tamaño fijo en píxeles del mapa y el texto del sistema puede venir
+/// en grande.
+class _ZoneBadge extends StatelessWidget {
+  const _ZoneBadge({required this.reason});
+
+  final String reason;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.unsafeZone,
+            borderRadius: BorderRadius.circular(AppRadius.floatingCard),
+            boxShadow: AppShadows.floatingCard,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Text(
+              reason,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WalkerMarker extends StatelessWidget {
+  const _WalkerMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Vas aquí',
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.walkPath, width: 3),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x40000000),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: SvgPicture.asset('assets/icons/walk.svg'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Hoja inferior: tiempo, qué se esquivó y la salida.
+class _WalkTripSheet extends StatelessWidget {
+  const _WalkTripSheet({
+    required this.width,
+    required this.maxHeight,
+    required this.trip,
+    required this.route,
+    this.onFinished,
+    this.onCancel,
+  });
+
+  final double width;
+  final double maxHeight;
+  final WalkTrip trip;
+  final WalkRoute route;
+  final VoidCallback? onFinished;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+    final arrived = trip.stage == WalkStage.arrived;
+
+    return TripSheet(
+      width: width,
+      maxHeight: maxHeight,
+      maxHeightFactor: 0.5,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            arrived ? 'Llegaste' : 'A pie',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppFonts.headline,
+              fontFamilyFallback: AppFonts.headlineFallback,
+              fontSize: fluid(width, designSize: 24, min: 19, max: 27),
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+          SizedBox(height: 16 * s),
+          InfoPill(
+            width: width,
+            label: arrived
+                ? 'Viaje terminado'
+                : 'Tiempo estimado: ${trip.remainingMinutes} min',
+            background: arrived ? AppColors.green : AppColors.magenta,
+          ),
+          SizedBox(height: 12 * s),
+          _SafetySummary(width: width, route: route),
+          SizedBox(height: 16 * s),
+          if (arrived)
+            PrimaryPillButton(
+              label: 'Terminar',
+              width: width,
+              designHeight: 44,
+              onPressed: onFinished,
+            )
+          else
+            Center(
+              child: CancelPill(width: width, onTap: onCancel),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Qué hizo el trazado con las zonas marcadas.
+class _SafetySummary extends StatelessWidget {
+  const _SafetySummary({required this.width, required this.route});
+
+  final double width;
+  final WalkRoute route;
+
+  String _distanceLabel(double meters) => meters >= 1000
+      ? '${(meters / 1000).toStringAsFixed(1)} km'
+      : '${meters.round()} m';
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+    final zoneCount = route.zonesOnDirectPath.length;
+
+    // Tres desenlaces distintos, y decir cuál es importa más que verse tranquilizador.
+    final String headline;
+    final String detail;
+    final Color swatch;
+
+    if (route.crossesUnsafeZone) {
+      headline = 'Este camino cruza una zona no recomendada';
+      detail =
+          'No hay ruta que las evite. '
+          '${_distanceLabel(route.totalMeters)} en total.';
+      swatch = AppColors.unsafeZone;
+    } else if (route.detoured) {
+      final reasons = route.zonesOnDirectPath
+          .map((zone) => zone.reason.toLowerCase())
+          .join(' · ');
+      headline = zoneCount == 1
+          ? 'Camino seguro · rodea 1 zona'
+          : 'Camino seguro · rodea $zoneCount zonas';
+      detail =
+          '$reasons. ${_distanceLabel(route.totalMeters)} en total, '
+          '${_distanceLabel(route.extraMeters)} más que la línea recta.';
+      swatch = AppColors.walkPath;
+    } else {
+      headline = 'Camino seguro · sin zonas marcadas de paso';
+      detail = '${_distanceLabel(route.totalMeters)} en total.';
+      swatch = AppColors.walkPath;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 14 * s,
+              height: 14 * s,
+              margin: EdgeInsets.only(top: 4 * s, right: 10 * s),
+              decoration: BoxDecoration(
+                color: swatch,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                headline,
+                style: TextStyle(
+                  fontFamily: AppFonts.button,
+                  fontFamilyFallback: AppFonts.buttonFallback,
+                  fontSize: fluid(width, designSize: 16, min: 13, max: 18),
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 6 * s),
+        Text(
+          detail,
+          style: TextStyle(
+            fontSize: fluid(width, designSize: 14, min: 12, max: 15),
+            color: AppColors.muted,
+          ),
+        ),
+        SizedBox(height: 6 * s),
+        // TODO(seguridad): quitar este aviso cuando `moreliaUnsafeZones` traiga datos reales.
+        Text(
+          'Zonas simuladas para la demo.',
+          style: TextStyle(
+            fontSize: fluid(width, designSize: 12, min: 11, max: 13),
+            color: AppColors.muted,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
+  }
+}
