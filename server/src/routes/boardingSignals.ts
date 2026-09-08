@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
-import { scheduleAutoAlight } from "../db/autoAlight";
+import { getBoardingSignal, setBoardingSignalStatus } from "../db/boardingSignals";
 import { emitDemandUpdate } from "../sockets/emit";
 
 export const boardingSignalsRouter = Router();
@@ -8,7 +8,15 @@ export const boardingSignalsRouter = Router();
 const VALID_STATUS = ["waiting", "boarded", "alighted", "expired"];
 
 boardingSignalsRouter.post("/boarding-signals", (req, res) => {
-  const { user_id, stop_id, route_id, intent } = req.body;
+  const {
+    user_id,
+    stop_id,
+    route_id,
+    intent,
+    destination_stop_id,
+    destination_lat,
+    destination_lng,
+  } = req.body;
   if (!user_id || !stop_id || !route_id || !["boarding", "passing"].includes(intent)) {
     res.status(400).json({
       error: "user_id, stop_id, route_id e intent ('boarding'|'passing') son requeridos",
@@ -20,13 +28,34 @@ boardingSignalsRouter.post("/boarding-signals", (req, res) => {
   const status = intent === "boarding" ? "waiting" : "expired";
   const result = db
     .prepare(
-      "INSERT INTO boarding_signals (user_id, stop_id, route_id, intent, status) VALUES (?, ?, ?, ?, ?)"
+      `INSERT INTO boarding_signals
+        (user_id, stop_id, route_id, intent, status, destination_stop_id, destination_lat, destination_lng)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(user_id, stop_id, route_id, intent, status);
+    .run(
+      user_id,
+      stop_id,
+      route_id,
+      intent,
+      status,
+      destination_stop_id ?? null,
+      destination_lat ?? null,
+      destination_lng ?? null
+    );
 
   if (status === "waiting") emitDemandUpdate(stop_id);
 
-  res.status(201).json({ id: result.lastInsertRowid, user_id, stop_id, route_id, intent, status });
+  res.status(201).json({
+    id: result.lastInsertRowid,
+    user_id,
+    stop_id,
+    route_id,
+    intent,
+    status,
+    destination_stop_id: destination_stop_id ?? null,
+    destination_lat: destination_lat ?? null,
+    destination_lng: destination_lng ?? null,
+  });
 });
 
 boardingSignalsRouter.patch("/boarding-signals/:id", (req, res) => {
@@ -37,20 +66,13 @@ boardingSignalsRouter.patch("/boarding-signals/:id", (req, res) => {
     return;
   }
 
-  const signal = db.prepare("SELECT stop_id FROM boarding_signals WHERE id = ?").get(id) as
-    | { stop_id: number | null }
-    | undefined;
+  const signal = getBoardingSignal(id);
   if (!signal) {
     res.status(404).json({ error: `boarding_signal ${id} no encontrado` });
     return;
   }
 
-  db.prepare("UPDATE boarding_signals SET status = ?, updated_at = datetime('now') WHERE id = ?").run(
-    status,
-    id
-  );
-  if (signal.stop_id != null) emitDemandUpdate(signal.stop_id);
-  if (status === "boarded") scheduleAutoAlight(id);
+  setBoardingSignalStatus(id, status, signal.stop_id);
 
   res.json({ id, status });
 });

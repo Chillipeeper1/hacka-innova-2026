@@ -45,6 +45,12 @@ CREATE TABLE boarding_signals (
   route_id INTEGER NOT NULL REFERENCES routes(id),
   intent TEXT NOT NULL CHECK (intent IN ('boarding', 'passing')),
   status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'boarded', 'alighted', 'expired')),
+  -- Destino declarado por el pasajero antes de abordar (app/README.md,
+  -- "el destino no se guarda"). Opcional y aditivo: nada se rompe si un
+  -- cliente no los manda.
+  destination_stop_id INTEGER REFERENCES stops(id),
+  destination_lat REAL,
+  destination_lng REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
