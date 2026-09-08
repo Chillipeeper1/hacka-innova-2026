@@ -15,6 +15,11 @@ import '../widgets/trip_widgets.dart';
 ///
 /// Implementa el diseño de Figma ("HACKA", nodo 17:284).
 ///
+/// La tarjeta de arriba responde a "a dónde vas" con **el viaje más rápido**, que combina
+/// modos y transbordos. La hoja de abajo es la anulación: para cuando el pasajero quiere ir en
+/// bici aunque no sea lo más rápido. Ese es el reparto — arriba la recomendación, abajo la
+/// elección — y por eso el camión vive en la hoja junto a los demás modos y no en la tarjeta.
+///
 /// El mapa arranca **limpio**: sin rutas ni paradas dibujadas. Mostrar todo el catálogo de
 /// entrada satura la pantalla y no ayuda a decidir — las paradas que importan son las que
 /// llevan a donde el usuario va, y eso no se sabe hasta que lo dice. El viaje empieza por el
@@ -25,7 +30,8 @@ class HomeScreen extends ConsumerWidget {
     super.key,
     this.onMenu,
     this.onProfile,
-    this.onSearchStop,
+    this.onFastestTrip,
+    this.onTravelByBus,
     this.onTravelByBike,
     this.onTravelWalking,
     this.onTravelByCableCar,
@@ -33,7 +39,11 @@ class HomeScreen extends ConsumerWidget {
 
   final VoidCallback? onMenu;
   final VoidCallback? onProfile;
-  final VoidCallback? onSearchStop;
+
+  /// La tarjeta de arriba: dime a dónde vas y te llevo por lo más rápido.
+  final VoidCallback? onFastestTrip;
+
+  final VoidCallback? onTravelByBus;
   final VoidCallback? onTravelByBike;
   final VoidCallback? onTravelWalking;
   final VoidCallback? onTravelByCableCar;
@@ -62,7 +72,7 @@ class HomeScreen extends ConsumerWidget {
                         SearchStopCard(
                           width: width,
                           label: '¿A dónde vas?',
-                          onTap: onSearchStop,
+                          onTap: onFastestTrip,
                         ),
                         const _BackendStatusBanner(),
                       ],
@@ -77,6 +87,7 @@ class HomeScreen extends ConsumerWidget {
                         _TravelSheet(
                           width: width,
                           maxHeight: constraints.maxHeight,
+                          onTravelByBus: onTravelByBus,
                           onTravelByBike: onTravelByBike,
                           onTravelWalking: onTravelWalking,
                           onTravelByCableCar: onTravelByCableCar,
@@ -174,6 +185,7 @@ class _TravelSheet extends StatelessWidget {
   const _TravelSheet({
     required this.width,
     required this.maxHeight,
+    this.onTravelByBus,
     this.onTravelByBike,
     this.onTravelWalking,
     this.onTravelByCableCar,
@@ -181,6 +193,7 @@ class _TravelSheet extends StatelessWidget {
 
   final double width;
   final double maxHeight;
+  final VoidCallback? onTravelByBus;
   final VoidCallback? onTravelByBike;
   final VoidCallback? onTravelWalking;
   final VoidCallback? onTravelByCableCar;
@@ -190,10 +203,18 @@ class _TravelSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.55,
+      maxHeightFactor: 0.62,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          TravelOptionTile(
+            asset: 'assets/icons/bus.svg',
+            label: 'Viajar en camión...',
+            width: width,
+            iconDesignSize: 40,
+            onTap: onTravelByBus,
+          ),
+          const Divider(height: 1, color: AppColors.surfaceGrey),
           TravelOptionTile(
             asset: 'assets/icons/bicycle.svg',
             label: 'Viajar en bici...',

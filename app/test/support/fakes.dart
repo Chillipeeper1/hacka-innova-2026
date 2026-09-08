@@ -28,6 +28,14 @@ const String routesPayload = '''
      {"id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177,"sequence":2}]}
 ]''';
 
+/// Respuesta real de `GET /journeys` de la Catedral al Bosque Cuauhtémoc.
+///
+/// Copiada del servidor corriendo, no escrita a mano: trae las dos alternativas que devuelve
+/// de verdad —la más rápida en bici y la de camión sin bici— con sus tramos de conexion a pie
+/// de cero minutos, que son justo los que la interfaz tiene que saber no enseñar.
+const String journeysPayload = '''
+{"alternatives":[{"label":"Más rápida","legs":[{"mode":"bike","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":null,"name":null,"lat":19.6917,"lng":-101.177},"distance_km":1.274,"eta_minutes":5.1}],"total_distance_km":1.274,"total_eta_minutes":5.1},{"label":"Sin bicicleta","legs":[{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":4,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"distance_km":0,"eta_minutes":0},{"mode":"bus","route_id":2,"route_name":"Ruta Centro - Bosque","from":{"stop_id":4,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"to":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"distance_km":1.274,"eta_minutes":8.1},{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"to":{"stop_id":null,"name":null,"lat":19.6917,"lng":-101.177},"distance_km":0,"eta_minutes":0}],"total_distance_km":1.274,"total_eta_minutes":8.1}]}''';
+
 /// Registra las peticiones que recibe, para poder afirmar sobre ellas.
 class RecordedRequest {
   const RecordedRequest({required this.method, required this.path, this.body});
@@ -42,6 +50,8 @@ class FakeApi {
   FakeApi({
     this.routesJson = routesPayload,
     this.demandJson = '[]',
+    this.journeysJson = journeysPayload,
+    this.journeysDelay = Duration.zero,
     this.etaJson,
     this.etaStatusCode = 200,
     this.boardingStatusCode = 201,
@@ -50,6 +60,11 @@ class FakeApi {
 
   final String routesJson;
   final String demandJson;
+  final String journeysJson;
+
+  /// Cuánto tarda `GET /journeys`. Sin esto la respuesta llega en el mismo microtask y el
+  /// estado de carga no existe el tiempo suficiente para verificarlo.
+  final Duration journeysDelay;
 
   /// `null` simula que la unidad todavía no reporta posición.
   final String? etaJson;
@@ -76,6 +91,15 @@ class FakeApi {
         );
 
         if (path == '/routes') return http.Response(routesJson, 200);
+        if (path == '/journeys') {
+          if (journeysDelay > Duration.zero) {
+            await Future<void>.delayed(journeysDelay);
+          }
+          if (journeysJson.isEmpty) {
+            return http.Response('{"error":"sin viaje"}', 400);
+          }
+          return http.Response(journeysJson, 200);
+        }
         if (path == '/demand/stops') return http.Response(demandJson, 200);
         if (path == '/users') {
           return http.Response(

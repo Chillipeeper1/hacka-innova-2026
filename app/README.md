@@ -71,6 +71,27 @@ paradas del catálogo, sigue la unidad en vivo por WebSocket y registra la confi
 abordaje. Los formularios de acceso siguen siendo maqueta — validan y entregan los datos por
 callback, sin crear cuentas.
 
+## El viaje más rápido: quién rutea qué
+
+La app tiene cinco entradas, y no todas se resuelven en el mismo sitio:
+
+| Entrada | Quién la resuelve | Por qué |
+|---|---|---|
+| **A dónde vas** (tarjeta de arriba) | Servidor, `GET /journeys` | Combina modos y transbordos sobre el grafo de paradas |
+| En camión | Cliente | Elige parada de subida y bajada con los datos de `/routes` |
+| En bici | Cliente | Necesita la red de ciclovías, que solo vive aquí |
+| Caminando | Cliente | Necesita las zonas no recomendadas, que solo viven aquí |
+| En teleférico | Cliente | Estaciones simuladas del propio cliente |
+
+El reparto de la pantalla de inicio sigue esa división: **arriba la recomendación** —dime a
+dónde vas y te llevo por lo más rápido— y **abajo la elección**, para cuando alguien quiere ir
+en bici aunque no sea lo más rápido. Por eso el camión bajó a la hoja con los demás modos en
+vez de quedarse en la tarjeta.
+
+El viaje más rápido es el único que espera a la red, así que es el único con estado de carga.
+Su itinerario no se recalcula en el cliente: se enseña, se recorre y se puede cambiar de
+alternativa entre las que devuelve el servidor.
+
 ## Mapas: hace falta una API key de Google
 
 Los mapas son **Google Maps** (`google_maps_flutter`), no OpenStreetMap. Sin clave no carga

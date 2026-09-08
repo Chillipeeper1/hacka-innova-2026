@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 
+import 'journey.dart';
 import 'models.dart';
 
 /// Cliente REST de `server/`.
@@ -71,6 +73,35 @@ class ApiClient {
     if (response.statusCode == 404) return null;
     final body = _decodeMap(response, 'GET /stops/$stopId/eta');
     return StopEta.fromJson(body);
+  }
+
+  /// Pide las formas de llegar de un punto a otro, combinando modos y transbordos.
+  ///
+  /// El ruteo lo hace el servidor: el cliente no recalcula ni reordena. Devuelve las
+  /// alternativas en el orden en que llegan, y la primera es la más rápida.
+  ///
+  /// [modes] restringe los modos permitidos; vacío o nulo significa "todos".
+  Future<List<Journey>> fetchJourneys({
+    required LatLng origin,
+    required LatLng destination,
+    List<JourneyMode>? modes,
+  }) async {
+    final query = <String, String>{
+      'origin_lat': '${origin.latitude}',
+      'origin_lng': '${origin.longitude}',
+      'destination_lat': '${destination.latitude}',
+      'destination_lng': '${destination.longitude}',
+      if (modes != null && modes.isNotEmpty)
+        'modes': modes.map((mode) => mode.wireValue).join(','),
+    };
+
+    final response = await _http.get(
+      Uri.parse('$baseUrl/journeys').replace(queryParameters: query),
+    );
+    final body = _decodeMap(response, 'GET /journeys');
+    return (body['alternatives'] as List<dynamic>)
+        .map((json) => Journey.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Declara la intención del pasajero — el diferenciador del proyecto.

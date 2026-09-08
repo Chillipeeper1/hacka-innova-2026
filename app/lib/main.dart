@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/bike_trip.dart';
 import 'data/cable_car_trip.dart';
+import 'data/journey_trip.dart';
 import 'data/trip_plan.dart';
 import 'data/walk_trip.dart';
 import 'screens/confirm_stop_screen.dart';
@@ -15,6 +16,7 @@ import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
 import 'screens/bike_trip_screen.dart';
 import 'screens/cable_car_trip_screen.dart';
+import 'screens/journey_screen.dart';
 import 'screens/board_bus_screen.dart';
 import 'screens/onboard_trip_screen.dart';
 import 'screens/rating_screen.dart';
@@ -65,6 +67,9 @@ class MtappApp extends StatelessWidget {
         AppRoutes.cableCarDestination: (context) =>
             const _CableCarDestinationRoute(),
         AppRoutes.cableCarTrip: (context) => const _CableCarTripRoute(),
+        AppRoutes.fastestDestination: (context) =>
+            const _FastestDestinationRoute(),
+        AppRoutes.fastestTrip: (context) => const _FastestTripRoute(),
       },
     );
   }
@@ -98,6 +103,11 @@ class AppRoutes {
 
   static const String cableCarDestination = '/destino-telef';
   static const String cableCarTrip = '/en-telef';
+
+  /// El viaje más rápido: el único que combina modos, y el único cuyo itinerario lo arma el
+  /// servidor en vez del cliente.
+  static const String fastestDestination = '/destino-rapido';
+  static const String fastestTrip = '/mas-rapido';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -169,7 +179,12 @@ class _HomeRoute extends ConsumerWidget {
     return HomeScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onSearchStop: () {
+      // La tarjeta de arriba responde a "a dónde vas" con la mejor combinación de modos.
+      onFastestTrip: () {
+        ref.read(journeyTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.fastestDestination);
+      },
+      onTravelByBus: () {
         // Cada viaje empieza de cero: si quedaba uno a medias, se descarta al pedir destino.
         ref.read(tripPlanProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.destination);
@@ -426,6 +441,49 @@ class _CableCarTripRoute extends ConsumerWidget {
     }
 
     return CableCarTripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished: finish,
+      onCancel: finish,
+    );
+  }
+}
+
+/// Más rápido, paso 1: a dónde va.
+class _FastestDestinationRoute extends ConsumerWidget {
+  const _FastestDestinationRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: (destination) {
+        // No se espera al servidor para navegar: la pantalla del viaje tiene su propio estado
+        // de carga, y quedarse en la de destino sin señal de nada se siente a app colgada.
+        ref.read(journeyTripProvider.notifier).start(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.fastestTrip);
+      },
+    );
+  }
+}
+
+/// Más rápido, paso 2: el itinerario, que arma el servidor.
+class _FastestTripRoute extends ConsumerWidget {
+  const _FastestTripRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void finish() {
+      ref.read(journeyTripProvider.notifier).reset();
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
+    }
+
+    return JourneyScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
       onFinished: finish,

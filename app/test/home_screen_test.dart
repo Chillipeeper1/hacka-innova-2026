@@ -19,7 +19,8 @@ void main() {
     Size size, {
     double textScale = 1.0,
     FakeApi? api,
-    VoidCallback? onSearchStop,
+    VoidCallback? onFastestTrip,
+    VoidCallback? onTravelByBus,
     VoidCallback? onTravelByBike,
     VoidCallback? onTravelWalking,
     VoidCallback? onTravelByCableCar,
@@ -42,7 +43,8 @@ void main() {
               textScaler: TextScaler.linear(textScale),
             ),
             child: HomeScreen(
-              onSearchStop: onSearchStop,
+              onFastestTrip: onFastestTrip,
+              onTravelByBus: onTravelByBus,
               onTravelByBike: onTravelByBike,
               onTravelWalking: onTravelWalking,
               onTravelByCableCar: onTravelByCableCar,
@@ -90,6 +92,7 @@ void main() {
         expectNoLayoutError(tester, name);
 
         expect(find.text('¿A dónde vas?'), findsOneWidget);
+        expect(find.text('Viajar en camión...'), findsOneWidget);
         expect(find.text('Viajar en bici...'), findsOneWidget);
         expect(find.text('Viajar caminando...'), findsOneWidget);
         expect(find.text('Viajar en teleférico...'), findsOneWidget);
@@ -152,7 +155,7 @@ void main() {
 
   testWidgets('el buscador es la puerta de entrada al viaje', (tester) async {
     var search = 0;
-    await pumpAt(tester, const Size(402, 874), onSearchStop: () => search++);
+    await pumpAt(tester, const Size(402, 874), onFastestTrip: () => search++);
     expectNoLayoutError(tester, 'buscador');
 
     await tester.tap(find.byType(SearchStopCard));
