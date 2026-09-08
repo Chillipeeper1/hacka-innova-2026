@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/bike_trip.dart';
 import 'data/trip_plan.dart';
 import 'screens/confirm_stop_screen.dart';
 import 'screens/destination_screen.dart';
@@ -10,6 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
+import 'screens/bike_trip_screen.dart';
 import 'screens/board_bus_screen.dart';
 import 'screens/onboard_trip_screen.dart';
 import 'screens/rating_screen.dart';
@@ -51,6 +53,8 @@ class MtappApp extends StatelessWidget {
         AppRoutes.boardBus: (context) => const _BoardBusRoute(),
         AppRoutes.trip: (context) => const _TripRoute(),
         AppRoutes.rating: (context) => const _RatingRoute(),
+        AppRoutes.bikeDestination: (context) => const _BikeDestinationRoute(),
+        AppRoutes.bikeTrip: (context) => const _BikeTripRoute(),
       },
     );
   }
@@ -71,13 +75,17 @@ class AppRoutes {
   static const String boardBus = '/esperar-camion';
   static const String trip = '/en-viaje';
   static const String rating = '/calificar';
+
+  /// El viaje en bici es su propio carril: destino y a rodar. No pasa por paradas ni pagos, y
+  /// por eso no reusa `/destino` — esa pantalla lleva al selector de paradas.
+  static const String bikeDestination = '/destino-bici';
+  static const String bikeTrip = '/en-bici';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
 void _pending(BuildContext context, String what) {
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text('$what: pendiente')));
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text('$what: pendiente')));
 }
 
 class _WelcomeRoute extends StatelessWidget {
@@ -105,12 +113,11 @@ class _RegisterRoute extends StatelessWidget {
       onSignIn: () => Navigator.pushReplacementNamed(context, AppRoutes.signIn),
       // Al darse de alta se entra al mapa y se limpia la pila: regresar a un formulario ya
       // resuelto no tiene sentido.
-      onSubmit:
-          (_) => Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRoutes.home,
-            (route) => false,
-          ),
+      onSubmit: (_) => Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      ),
       onGoogle: () => _pending(context, 'Acceso con Google'),
       onApple: () => _pending(context, 'Acceso con Apple'),
     );
@@ -123,14 +130,13 @@ class _SignInRoute extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SignInScreen(
-      onRegister:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.register),
-      onSubmit:
-          (_) => Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRoutes.home,
-            (route) => false,
-          ),
+      onRegister: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.register),
+      onSubmit: (_) => Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      ),
       onGoogle: () => _pending(context, 'Acceso con Google'),
       onApple: () => _pending(context, 'Acceso con Apple'),
     );
@@ -150,7 +156,10 @@ class _HomeRoute extends ConsumerWidget {
         ref.read(tripPlanProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.destination);
       },
-      onTravelByBike: () => _pending(context, 'Viaje en bici'),
+      onTravelByBike: () {
+        ref.read(bikeTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.bikeDestination);
+      },
       onTravelWalking: () => _pending(context, 'Viaje caminando'),
     );
   }
@@ -182,9 +191,8 @@ class _StopPickerRoute extends ConsumerWidget {
     return StopPickerScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onBack:
-          () =>
-              Navigator.pushReplacementNamed(context, AppRoutes.destination),
+      onBack: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.destination),
       onChoose: (option) {
         ref.read(tripPlanProvider.notifier).choose(option);
         Navigator.pushNamed(context, AppRoutes.confirmStop);
@@ -219,10 +227,10 @@ class _WalkRoute extends StatelessWidget {
     return WalkNavigationScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onBack:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.stopPicker),
-      onBoarded:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.boardBus),
+      onBack: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.stopPicker),
+      onBoarded: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.boardBus),
     );
   }
 }
@@ -236,8 +244,7 @@ class _BoardBusRoute extends StatelessWidget {
     return BoardBusScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onBoarded:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.trip),
+      onBoarded: () => Navigator.pushReplacementNamed(context, AppRoutes.trip),
       onCancel: () => _cancelTrip(context),
     );
   }
@@ -252,8 +259,8 @@ class _TripRoute extends StatelessWidget {
     return OnboardTripScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onArrived:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.rating),
+      onArrived: () =>
+          Navigator.pushReplacementNamed(context, AppRoutes.rating),
       onCancel: () => _cancelTrip(context),
     );
   }
@@ -266,12 +273,55 @@ class _RatingRoute extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RatingScreen(
-      onFinished:
-          () => Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRoutes.home,
-            (route) => false,
-          ),
+      onFinished: () => Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      ),
+    );
+  }
+}
+
+/// Bici, paso 1: a dónde va. Misma pantalla de destino que el camión.
+class _BikeDestinationRoute extends ConsumerWidget {
+  const _BikeDestinationRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: (destination) {
+        ref.read(bikeTripProvider.notifier).start(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.bikeTrip);
+      },
+    );
+  }
+}
+
+/// Bici, paso 2: el viaje. No hay paso 3 — al llegar se vuelve al inicio.
+///
+/// A diferencia del camión no termina en la pantalla de calificación: ahí se califica el
+/// servicio de transporte, y en bici no hay servicio que calificar.
+class _BikeTripRoute extends ConsumerWidget {
+  const _BikeTripRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void finish() {
+      ref.read(bikeTripProvider.notifier).reset();
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
+    }
+
+    return BikeTripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished: finish,
+      onCancel: finish,
     );
   }
 }
@@ -280,9 +330,5 @@ class _RatingRoute extends StatelessWidget {
 void _cancelTrip(BuildContext context) {
   final container = ProviderScope.containerOf(context);
   container.read(tripPlanProvider.notifier).reset();
-  Navigator.pushNamedAndRemoveUntil(
-    context,
-    AppRoutes.home,
-    (route) => false,
-  );
+  Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
 }
