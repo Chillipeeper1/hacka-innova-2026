@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="44" height="44" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="cable-car">
+<path id="Cable" d="M2.76 10.72L44.76 2.72L45.24 5.28L3.24 13.28Z" fill="black"/>
+<circle id="Grip" cx="24" cy="8" r="3.2" fill="black"/>
+<rect id="Hanger" x="22.4" y="8" width="3.2" height="13" fill="black"/>
+<rect id="Cabin" x="10" y="20" width="28" height="22" rx="5" fill="black"/>
+<rect id="Window" x="14" y="24.5" width="20" height="9" rx="2" fill="white"/>
+<rect id="WindowDivider" x="22.9" y="24.5" width="2.2" height="9" fill="black"/>
+</g>
+</svg>

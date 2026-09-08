@@ -174,6 +174,10 @@ class _HomeRoute extends ConsumerWidget {
         ref.read(walkTripProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.onFootDestination);
       },
+      // El teleférico está en el selector de modo del Escenario 1, pero su flujo todavía no
+      // existe: no hay líneas, estaciones ni horarios en el seed. Aparece como opción y avisa
+      // que falta, en vez de llevar a una pantalla vacía.
+      onTravelByCableCar: () => _pending(context, 'Viaje en teleférico'),
     );
   }
 }

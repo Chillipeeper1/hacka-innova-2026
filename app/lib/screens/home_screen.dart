@@ -28,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
     this.onSearchStop,
     this.onTravelByBike,
     this.onTravelWalking,
+    this.onTravelByCableCar,
   });
 
   final VoidCallback? onMenu;
@@ -35,6 +36,7 @@ class HomeScreen extends ConsumerWidget {
   final VoidCallback? onSearchStop;
   final VoidCallback? onTravelByBike;
   final VoidCallback? onTravelWalking;
+  final VoidCallback? onTravelByCableCar;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -80,6 +82,7 @@ class HomeScreen extends ConsumerWidget {
                           maxHeight: constraints.maxHeight,
                           onTravelByBike: onTravelByBike,
                           onTravelWalking: onTravelWalking,
+                          onTravelByCableCar: onTravelByCableCar,
                         ),
                       ],
                     ),
@@ -220,12 +223,14 @@ class _TravelSheet extends StatelessWidget {
     required this.maxHeight,
     this.onTravelByBike,
     this.onTravelWalking,
+    this.onTravelByCableCar,
   });
 
   final double width;
   final double maxHeight;
   final VoidCallback? onTravelByBike;
   final VoidCallback? onTravelWalking;
+  final VoidCallback? onTravelByCableCar;
 
   @override
   Widget build(BuildContext context) {
@@ -250,6 +255,14 @@ class _TravelSheet extends StatelessWidget {
             width: width,
             iconDesignSize: 41,
             onTap: onTravelWalking,
+          ),
+          const Divider(height: 1, color: AppColors.surfaceGrey),
+          TravelOptionTile(
+            asset: 'assets/icons/cable-car.svg',
+            label: 'Viajar en teleférico...',
+            width: width,
+            iconDesignSize: 44,
+            onTap: onTravelByCableCar,
           ),
         ],
       ),
