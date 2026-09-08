@@ -43,6 +43,20 @@ class AppColors {
   /// Botón circular de regreso.
   static const Color mint = Color(0xFFDCFFB8);
 
+  /// Parada concurrida: mucha gente esperando.
+  static const Color crowdBusy = Color(0xFFFFC400);
+  static const Color crowdBusyArea = Color(0xFFFFB508);
+
+  /// Parada despejada.
+  static const Color crowdFree = Color(0xFF00FF4D);
+  static const Color crowdFreeArea = Color(0xFF83FF08);
+
+  /// Trazado de la caminata hacia la parada.
+  static const Color walkPath = Color(0xFF0004FF);
+
+  /// Velo sobre el mapa cuando se pide una confirmación.
+  static const Color modalScrim = Color(0x8A000000); // negro al 54%
+
   static const Color sheet = Colors.white;
 
   /// Velo sobre la fotografía. Sin él, el texto blanco no alcanza contraste legible sobre la

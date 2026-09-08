@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'data/trip_draft.dart';
-
+import 'data/trip_plan.dart';
+import 'screens/confirm_stop_screen.dart';
 import 'screens/destination_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
+import 'screens/stop_picker_screen.dart';
+import 'screens/trip_screen.dart';
+import 'screens/walk_navigation_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -40,11 +43,16 @@ class MtappApp extends StatelessWidget {
         AppRoutes.signIn: (context) => const _SignInRoute(),
         AppRoutes.home: (context) => const _HomeRoute(),
         AppRoutes.destination: (context) => const _DestinationRoute(),
+        AppRoutes.stopPicker: (context) => const _StopPickerRoute(),
+        AppRoutes.confirmStop: (context) => const _ConfirmStopRoute(),
+        AppRoutes.walk: (context) => const _WalkRoute(),
+        AppRoutes.trip: (context) => const _TripRoute(),
       },
     );
   }
 }
 
+/// Las rutas siguen el orden del viaje: destino → parada → confirmación → caminata → a bordo.
 class AppRoutes {
   const AppRoutes._();
 
@@ -53,6 +61,10 @@ class AppRoutes {
   static const String signIn = '/entrar';
   static const String home = '/inicio';
   static const String destination = '/destino';
+  static const String stopPicker = '/paradas';
+  static const String confirmStop = '/confirmar-parada';
+  static const String walk = '/ir-a-la-parada';
+  static const String trip = '/viaje';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -84,8 +96,7 @@ class _RegisterRoute extends StatelessWidget {
     return RegisterScreen(
       // Reemplaza en vez de apilar: ir y venir entre registro e inicio de sesión no debe
       // dejar una pila de pantallas por las que el usuario tenga que regresar una por una.
-      onSignIn:
-          () => Navigator.pushReplacementNamed(context, AppRoutes.signIn),
+      onSignIn: () => Navigator.pushReplacementNamed(context, AppRoutes.signIn),
       // Al darse de alta se entra al mapa y se limpia la pila: regresar a un formulario ya
       // resuelto no tiene sentido.
       onSubmit:
@@ -120,27 +131,26 @@ class _SignInRoute extends StatelessWidget {
   }
 }
 
-class _HomeRoute extends StatelessWidget {
+class _HomeRoute extends ConsumerWidget {
   const _HomeRoute();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return HomeScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onSearchStop:
-          () => Navigator.pushNamed(context, AppRoutes.destination),
+      onSearchStop: () {
+        // Cada viaje empieza de cero: si quedaba uno a medias, se descarta al pedir destino.
+        ref.read(tripPlanProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.destination);
+      },
       onTravelByBike: () => _pending(context, 'Viaje en bici'),
       onTravelWalking: () => _pending(context, 'Viaje caminando'),
     );
   }
 }
 
-/// Elegir destino es el **primer** paso del viaje, no un extra.
-///
-/// Al confirmar, el destino queda en el borrador de viaje y el mapa pasa a mostrar la ruta que
-/// sirve para llegar. Sin ese dato la hoja de parada no deja abordar: una confirmación sin
-/// destino solo diría que alguien espera en un punto.
+/// Paso 1: a dónde va.
 class _DestinationRoute extends ConsumerWidget {
   const _DestinationRoute();
 
@@ -150,21 +160,81 @@ class _DestinationRoute extends ConsumerWidget {
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
       onConfirm: (destination) {
-        ref.read(tripDraftProvider.notifier).setDestination(destination);
-        final trip = ref.read(tripDraftProvider);
-
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              trip.isRoutable
-                  ? 'Te lleva la ${trip.route!.name}. '
-                      'Bájate en ${trip.destinationStop!.name}.'
-                  : 'Ninguna ruta del catálogo llega cerca de ese punto.',
-            ),
-          ),
-        );
+        ref.read(tripPlanProvider.notifier).setDestination(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.stopPicker);
       },
+    );
+  }
+}
+
+/// Paso 2: por qué parada subirse.
+class _StopPickerRoute extends ConsumerWidget {
+  const _StopPickerRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return StopPickerScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onBack:
+          () =>
+              Navigator.pushReplacementNamed(context, AppRoutes.destination),
+      onChoose: (option) {
+        ref.read(tripPlanProvider.notifier).choose(option);
+        Navigator.pushNamed(context, AppRoutes.confirmStop);
+      },
+    );
+  }
+}
+
+/// Paso 3: revisar la elección antes de caminar.
+class _ConfirmStopRoute extends ConsumerWidget {
+  const _ConfirmStopRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ConfirmStopScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: () {
+        ref.read(tripPlanProvider.notifier).startWalking();
+        Navigator.pushReplacementNamed(context, AppRoutes.walk);
+      },
+    );
+  }
+}
+
+/// Paso 4: caminar, y al llegar confirmar el abordaje.
+class _WalkRoute extends StatelessWidget {
+  const _WalkRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return WalkNavigationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onBack:
+          () => Navigator.pushReplacementNamed(context, AppRoutes.stopPicker),
+      onBoarded: () => Navigator.pushReplacementNamed(context, AppRoutes.trip),
+    );
+  }
+}
+
+/// Paso 5: a bordo, viendo la ruta y la unidad.
+class _TripRoute extends StatelessWidget {
+  const _TripRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return TripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished:
+          () => Navigator.pushNamedAndRemoveUntil(
+            context,
+            AppRoutes.home,
+            (route) => false,
+          ),
     );
   }
 }

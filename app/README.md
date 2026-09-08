@@ -19,11 +19,34 @@ Cinco pantallas, implementadas desde el archivo de Figma **HACKA**:
 | Inicial | `lib/screens/login_screen.dart` | `47:1014` |
 | Registro | `lib/screens/register_screen.dart` | `47:1030` |
 | Iniciar sesión | `lib/screens/sign_in_screen.dart` | `47:1064` |
-| Mapa (Escenario 1) | `lib/screens/home_screen.dart` | `17:284` |
+| Mapa | `lib/screens/home_screen.dart` | `17:284` |
 | Elegir destino | `lib/screens/destination_screen.dart` | `32:663` |
+| Elegir parada | `lib/screens/stop_picker_screen.dart` | `32:392` |
+| Confirmar parada | `lib/screens/confirm_stop_screen.dart` | `32:634` |
+| Ir a la parada | `lib/screens/walk_navigation_screen.dart` | `32:504` |
 
-La hoja de confirmación de abordaje (`lib/widgets/stop_sheet.dart`, Escenario 2) no tiene
-diseño de Figma todavía: está armada con los mismos componentes que el resto.
+`lib/screens/trip_screen.dart` (a bordo: ruta completa y dónde viene la unidad) no tiene
+diseño de Figma todavía; está armada con los mismos componentes que el resto.
+
+## El flujo del viaje
+
+```
+Inicio (mapa limpio)
+  └─ ¿A dónde vas?        destination_screen   arrastra el mapa, confirma el punto
+     └─ Paradas cerca      stop_picker_screen   opciones ordenadas por qué tan cerca te dejan
+        └─ ¿Confirmar?     confirm_stop_screen  revisa distancia al destino y ETA
+           └─ Ir a pie     walk_navigation      al llegar aparece la confirmación de abordaje
+              └─ A bordo   trip_screen          ruta completa, unidad en vivo, "ya me bajé"
+```
+
+El mapa de inicio arranca **sin rutas ni paradas**: mostrar el catálogo completo satura y no
+ayuda a decidir. Las paradas pertinentes son las que llevan a donde el usuario va, y eso no se
+sabe hasta que lo dice.
+
+El estado del viaje vive en `lib/data/trip_plan.dart`. `buildOptions()` es la pieza que decide
+qué se ofrece: para cada ruta toma **la parada que deja más cerca del destino** y ordena las
+opciones por esa distancia, con la caminata hasta el abordaje como desempate. Caminar de más al
+principio se tolera mucho mejor que quedar lejos al final, con el pasaje ya pagado.
 
 Se navegan entre sí (`lib/main.dart`). El mapa **ya habla con `server/`**: dibuja las rutas y
 paradas del catálogo, sigue la unidad en vivo por WebSocket y registra la confirmación de
