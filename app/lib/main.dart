@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
@@ -34,6 +35,7 @@ class MtappApp extends StatelessWidget {
         AppRoutes.welcome: (context) => const _WelcomeRoute(),
         AppRoutes.register: (context) => const _RegisterRoute(),
         AppRoutes.signIn: (context) => const _SignInRoute(),
+        AppRoutes.home: (context) => const _HomeRoute(),
       },
     );
   }
@@ -45,10 +47,10 @@ class AppRoutes {
   static const String welcome = '/';
   static const String register = '/registro';
   static const String signIn = '/entrar';
+  static const String home = '/inicio';
 }
 
-/// TODO(navegación): al entrar o registrarse debe abrirse el mapa del pasajero; esa pantalla
-/// es el Escenario 1 de CLAUDE.md y todavía no existe.
+/// Marcador para las acciones que todavía no llevan a ningún lado.
 void _pending(BuildContext context, String what) {
   ScaffoldMessenger.of(
     context,
@@ -79,7 +81,14 @@ class _RegisterRoute extends StatelessWidget {
       // dejar una pila de pantallas por las que el usuario tenga que regresar una por una.
       onSignIn:
           () => Navigator.pushReplacementNamed(context, AppRoutes.signIn),
-      onSubmit: (draft) => _pending(context, 'Alta de ${draft.fullName}'),
+      // Al darse de alta se entra al mapa y se limpia la pila: regresar a un formulario ya
+      // resuelto no tiene sentido.
+      onSubmit:
+          (_) => Navigator.pushNamedAndRemoveUntil(
+            context,
+            AppRoutes.home,
+            (route) => false,
+          ),
       onGoogle: () => _pending(context, 'Acceso con Google'),
       onApple: () => _pending(context, 'Acceso con Apple'),
     );
@@ -94,9 +103,29 @@ class _SignInRoute extends StatelessWidget {
     return SignInScreen(
       onRegister:
           () => Navigator.pushReplacementNamed(context, AppRoutes.register),
-      onSubmit: (credentials) => _pending(context, 'Entrar como ${credentials.email}'),
+      onSubmit:
+          (_) => Navigator.pushNamedAndRemoveUntil(
+            context,
+            AppRoutes.home,
+            (route) => false,
+          ),
       onGoogle: () => _pending(context, 'Acceso con Google'),
       onApple: () => _pending(context, 'Acceso con Apple'),
+    );
+  }
+}
+
+class _HomeRoute extends StatelessWidget {
+  const _HomeRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return HomeScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onSearchStop: () => _pending(context, 'Búsqueda de paradas'),
+      onTravelByBike: () => _pending(context, 'Viaje en bici'),
+      onTravelWalking: () => _pending(context, 'Viaje caminando'),
     );
   }
 }

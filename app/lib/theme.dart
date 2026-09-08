@@ -98,6 +98,37 @@ class AppRadius {
 
   /// Los CTA del diseño son píldoras completas.
   static const double pill = 999;
+
+  /// Tarjeta flotante sobre el mapa.
+  static const double floatingCard = 30;
+
+  /// Botones cuadrados del mapa.
+  static const double squareButton = 15;
+}
+
+/// Sombras del diseño.
+///
+/// Sobre el mapa todo flota: sin sombra, una tarjeta blanca sobre teselas claras se pierde. El
+/// diseño las define con desplazamiento lateral, no centradas.
+class AppShadows {
+  const AppShadows._();
+
+  static const Color _key = Color(0x40000000); // negro al 25%
+
+  /// Tarjeta de búsqueda.
+  static const List<BoxShadow> floatingCard = [
+    BoxShadow(color: _key, offset: Offset(5, 4), blurRadius: 4),
+  ];
+
+  /// Botones cuadrados de la parte superior.
+  static const List<BoxShadow> squareButton = [
+    BoxShadow(color: _key, offset: Offset(4, 4), blurRadius: 4),
+  ];
+
+  /// Hoja inferior: la sombra va hacia arriba, contra el mapa.
+  static const List<BoxShadow> sheet = [
+    BoxShadow(color: _key, offset: Offset(0, -3), blurRadius: 4),
+  ];
 }
 
 /// Escala tipográfica fluida.
