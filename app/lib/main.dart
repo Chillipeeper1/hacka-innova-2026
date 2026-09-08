@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/bike_trip.dart';
+import 'data/cable_car_trip.dart';
 import 'data/trip_plan.dart';
 import 'data/walk_trip.dart';
 import 'screens/confirm_stop_screen.dart';
@@ -13,6 +14,7 @@ import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
 import 'screens/bike_trip_screen.dart';
+import 'screens/cable_car_trip_screen.dart';
 import 'screens/board_bus_screen.dart';
 import 'screens/onboard_trip_screen.dart';
 import 'screens/rating_screen.dart';
@@ -60,6 +62,9 @@ class MtappApp extends StatelessWidget {
         AppRoutes.onFootDestination: (context) =>
             const _OnFootDestinationRoute(),
         AppRoutes.onFootTrip: (context) => const _OnFootTripRoute(),
+        AppRoutes.cableCarDestination: (context) =>
+            const _CableCarDestinationRoute(),
+        AppRoutes.cableCarTrip: (context) => const _CableCarTripRoute(),
       },
     );
   }
@@ -90,6 +95,9 @@ class AppRoutes {
   /// parada** dentro del viaje en camión.
   static const String onFootDestination = '/destino-a-pie';
   static const String onFootTrip = '/a-pie';
+
+  static const String cableCarDestination = '/destino-telef';
+  static const String cableCarTrip = '/en-telef';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -174,10 +182,10 @@ class _HomeRoute extends ConsumerWidget {
         ref.read(walkTripProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.onFootDestination);
       },
-      // El teleférico está en el selector de modo del Escenario 1, pero su flujo todavía no
-      // existe: no hay líneas, estaciones ni horarios en el seed. Aparece como opción y avisa
-      // que falta, en vez de llevar a una pantalla vacía.
-      onTravelByCableCar: () => _pending(context, 'Viaje en teleférico'),
+      onTravelByCableCar: () {
+        ref.read(cableCarTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.cableCarDestination);
+      },
     );
   }
 }
@@ -376,6 +384,48 @@ class _OnFootTripRoute extends ConsumerWidget {
     }
 
     return WalkTripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished: finish,
+      onCancel: finish,
+    );
+  }
+}
+
+/// Teleférico, paso 1: a dónde va.
+class _CableCarDestinationRoute extends ConsumerWidget {
+  const _CableCarDestinationRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: (destination) {
+        ref.read(cableCarTripProvider.notifier).start(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.cableCarTrip);
+      },
+    );
+  }
+}
+
+/// Teleférico, paso 2: el viaje. Las estaciones las elige el sistema, no el usuario: son
+/// siempre la más cercana a él y la que lo deja más cerca, así que no hay nada que preguntar.
+class _CableCarTripRoute extends ConsumerWidget {
+  const _CableCarTripRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void finish() {
+      ref.read(cableCarTripProvider.notifier).reset();
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
+    }
+
+    return CableCarTripScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
       onFinished: finish,
