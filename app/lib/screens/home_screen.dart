@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../data/models.dart';
 import '../data/providers.dart';
+import '../data/trip_draft.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/map_chrome.dart';
@@ -38,11 +39,13 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final trip = ref.watch(tripDraftProvider);
+
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const _MoreliaMap(),
+          _MoreliaMap(onSetDestination: onSearchStop),
           LayoutBuilder(
             builder: (context, constraints) {
               final width = math.min(constraints.maxWidth, maxContentWidth);
@@ -91,6 +94,15 @@ class HomeScreen extends ConsumerWidget {
                               SizedBox(height: 30 * s),
                               SearchStopCard(
                                 width: width,
+                                // El buscador es también el estado del viaje: mientras no
+                                // haya destino, es lo primero que hay que hacer.
+                                label: switch (trip) {
+                                  TripDraft(isRoutable: true) =>
+                                    'Vas a ${trip.destinationStop!.name}',
+                                  TripDraft(isUnreachable: true) =>
+                                    'Sin ruta a ese destino',
+                                  _ => '¿A dónde vas?',
+                                },
                                 onTap: onSearchStop,
                               ),
                               const _BackendStatusBanner(),
@@ -130,13 +142,16 @@ class HomeScreen extends ConsumerWidget {
 
 /// El mapa, con las rutas, sus paradas y las unidades en vivo.
 class _MoreliaMap extends ConsumerWidget {
-  const _MoreliaMap();
+  const _MoreliaMap({this.onSetDestination});
+
+  final VoidCallback? onSetDestination;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final routes = ref.watch(routesProvider).value ?? const <TransitRoute>[];
     final vehicles = ref.watch(vehiclePositionsProvider);
     final demand = ref.watch(demandProvider).value ?? const <int, int>{};
+    final trip = ref.watch(tripDraftProvider);
 
     return FlutterMap(
       options: MapOptions(
@@ -165,8 +180,15 @@ class _MoreliaMap extends ConsumerWidget {
               if (route.shape.length > 1)
                 Polyline(
                   points: route.shape,
-                  color: colorFromHex(route.colorHex).withValues(alpha: 0.85),
-                  strokeWidth: 5,
+                  // Con destino elegido, la ruta que sirve se destaca y las demás se
+                  // atenúan: el mapa deja de ser un catálogo y pasa a mostrar un viaje.
+                  color: colorFromHex(route.colorHex).withValues(
+                    alpha:
+                        trip.route == null || trip.route!.id == route.id
+                            ? 0.85
+                            : 0.25,
+                  ),
+                  strokeWidth: trip.route?.id == route.id ? 6 : 5,
                 ),
           ],
         ),
@@ -184,6 +206,8 @@ class _MoreliaMap extends ConsumerWidget {
                     routeId: route.id,
                     color: colorFromHex(route.colorHex),
                     waiting: demand[stop.id] ?? 0,
+                    isAlightingStop: trip.destinationStop?.id == stop.id,
+                    onSetDestination: onSetDestination,
                   ),
                 ),
           ],
@@ -207,6 +231,18 @@ class _MoreliaMap extends ConsumerWidget {
               ),
           ],
         ),
+
+        if (trip.destination != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: trip.destination!,
+                width: 34,
+                height: 34,
+                child: const _DestinationMarker(),
+              ),
+            ],
+          ),
 
         const MarkerLayer(markers: [_userLocationMarker]),
       ],
@@ -232,6 +268,8 @@ class _StopMarker extends StatelessWidget {
     required this.routeId,
     required this.color,
     required this.waiting,
+    this.isAlightingStop = false,
+    this.onSetDestination,
   });
 
   final Stop stop;
@@ -239,17 +277,27 @@ class _StopMarker extends StatelessWidget {
   final Color color;
   final int waiting;
 
+  /// La parada donde el viaje termina; se marca distinto para no confundirla con una de
+  /// abordaje.
+  final bool isAlightingStop;
+
+  final VoidCallback? onSetDestination;
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Parada ${stop.name}',
+      label:
+          isAlightingStop
+              ? 'Parada de bajada ${stop.name}'
+              : 'Parada ${stop.name}',
       child: GestureDetector(
         onTap: () async {
           final boarded = await StopSheet.show(
             context,
             stop: stop,
             routeId: routeId,
+            onSetDestination: onSetDestination,
           );
           if (boarded == true && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -263,10 +311,10 @@ class _StopMarker extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               Container(
-                width: 22,
-                height: 22,
+                width: isAlightingStop ? 28 : 22,
+                height: isAlightingStop ? 28 : 22,
                 decoration: BoxDecoration(
-                  color: color,
+                  color: isAlightingStop ? AppColors.magentaDeep : color,
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 3),
                   boxShadow: const [
@@ -526,6 +574,41 @@ class _MapAttribution extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Punto exacto que el usuario eligió como destino.
+///
+/// Va aparte de la parada de bajada: son cosas distintas, y ver ambas explica de un vistazo
+/// cuánto hay que caminar al bajarse.
+class _DestinationMarker extends StatelessWidget {
+  const _DestinationMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Tu destino',
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.magentaDeep, width: 3),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x40000000),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.flag,
+          size: 16,
+          color: AppColors.magentaDeep,
         ),
       ),
     );

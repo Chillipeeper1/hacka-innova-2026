@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/trip_draft.dart';
+
 import 'screens/destination_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -134,23 +136,31 @@ class _HomeRoute extends StatelessWidget {
   }
 }
 
-class _DestinationRoute extends StatelessWidget {
+/// Elegir destino es el **primer** paso del viaje, no un extra.
+///
+/// Al confirmar, el destino queda en el borrador de viaje y el mapa pasa a mostrar la ruta que
+/// sirve para llegar. Sin ese dato la hoja de parada no deja abordar: una confirmación sin
+/// destino solo diría que alguien espera en un punto.
+class _DestinationRoute extends ConsumerWidget {
   const _DestinationRoute();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return DestinationScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      // TODO(ruteo): al confirmar debe calcularse el viaje contra `server/`. Por ahora
-      // regresa al mapa con el punto elegido.
       onConfirm: (destination) {
+        ref.read(tripDraftProvider.notifier).setDestination(destination);
+        final trip = ref.read(tripDraftProvider);
+
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Destino: ${destination.latitude.toStringAsFixed(5)}, '
-              '${destination.longitude.toStringAsFixed(5)}',
+              trip.isRoutable
+                  ? 'Te lleva la ${trip.route!.name}. '
+                      'Bájate en ${trip.destinationStop!.name}.'
+                  : 'Ninguna ruta del catálogo llega cerca de ese punto.',
             ),
           ),
         );

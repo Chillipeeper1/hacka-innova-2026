@@ -3,7 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maas_morelia/data/models.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/providers.dart';
+import 'package:maas_morelia/data/trip_draft.dart';
 import 'package:maas_morelia/screens/home_screen.dart';
 import 'package:maas_morelia/theme.dart';
 import 'package:maas_morelia/widgets/map_chrome.dart';
@@ -91,7 +93,8 @@ void main() {
         await pumpAt(tester, size);
         expectNoLayoutError(tester, name);
 
-        expect(find.text('Buscar parada...'), findsOneWidget);
+        // Sin destino declarado, el buscador es la primera acción del viaje.
+        expect(find.text('¿A dónde vas?'), findsOneWidget);
         expect(find.text('Viajar en bici...'), findsOneWidget);
         expect(find.text('Viajar caminando...'), findsOneWidget);
       });
@@ -198,7 +201,7 @@ void main() {
 
     expect(find.bySemanticsLabel('Abrir menú'), findsOneWidget);
     expect(find.bySemanticsLabel('Mi perfil'), findsOneWidget);
-    expect(find.bySemanticsLabel('Buscar parada...'), findsOneWidget);
+    expect(find.bySemanticsLabel('¿A dónde vas?'), findsOneWidget);
   });
 
   testWidgets('las opciones de viaje responden al toque', (tester) async {
@@ -232,6 +235,48 @@ void main() {
 
     final sheet = tester.getSize(find.byType(TravelOptionTile).first);
     expect(sheet.height, lessThan(size.height * 0.55));
+  });
+
+  testWidgets('el buscador muestra el destino una vez elegido', (tester) async {
+    // El buscador es también el estado del viaje: al declarar destino deja de pedirlo y
+    // pasa a decir a dónde va.
+    final container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(FakeApi().build()),
+        realtimeClientProvider.overrideWithValue(realtime),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(routesProvider.future);
+    container
+        .read(tripDraftProvider.notifier)
+        .setDestination(const LatLng(19.6920, -101.1772));
+
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const HomeScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+    expectNoLayoutError(tester, 'destino elegido');
+
+    expect(find.text('Vas a Bosque Cuauhtémoc'), findsOneWidget);
+    expect(find.text('¿A dónde vas?'), findsNothing);
+    // La parada de bajada se marca distinto para no confundirla con una de abordaje.
+    expect(
+      find.bySemanticsLabel('Parada de bajada Bosque Cuauhtémoc'),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Tu destino'), findsOneWidget);
   });
 
   testWidgets('los controles no se estiran en escritorio', (tester) async {

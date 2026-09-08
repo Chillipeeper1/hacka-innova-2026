@@ -95,6 +95,31 @@ Las pruebas de `test/` montan cada pantalla en ocho tamaños reales —de iPhone
 con tipografía al doble y con el teclado abierto, y fallan si algo desborda. Si vuelves a meter
 un tamaño en píxeles duros, se entera ahí y no en la demo.
 
+## Propuesta pendiente: el destino no se guarda
+
+El flujo ya exige declarar el destino antes de abordar, pero **`POST /boarding-signals` no
+tiene dónde recibirlo**: su cuerpo es `{user_id, stop_id, route_id, intent}`. Hoy el destino
+solo vive en el cliente, donde sirve para elegir ruta y parada de bajada, y se pierde al
+cerrar la app.
+
+Sin persistirlo, la señal sigue diciendo "alguien espera en la parada 3" y no "alguien va de la
+parada 3 a la 5". La diferencia importa para el panel institucional: con pares origen-destino se
+puede estimar la carga por tramo del corredor, no solo la fila en un punto.
+
+Cambio mínimo propuesto (**no implementado** — `CLAUDE.md` pide no inventar rutas ni campos sin
+acordarlo):
+
+```
+POST /boarding-signals
+{ user_id, stop_id, route_id, intent,
+  destination_stop_id,        // parada de bajada declarada
+  destination_lat,            // punto exacto que eligió el usuario,
+  destination_lng }           // por si no coincide con la parada
+```
+
+Y en `boarding_signals`, tres columnas opcionales con los mismos nombres. Es aditivo: los
+clientes que no manden esos campos siguen funcionando igual.
+
 ## Pendientes conocidos
 
 - **Tipografías.** El diseño usa Coolvetica, Nura, Satoshi y League Spartan. Los archivos no
@@ -105,6 +130,9 @@ un tamaño en píxeles duros, se entera ahí y no en la demo.
   creado al vuelo (`POST /users`), como permite `CLAUDE.md` en esta fase.
 - **Modo conductor (Escenario 3).** Hoy la unidad la mueve el script `server/npm run simulate`;
   falta la pantalla que emita `driver:position` desde el teléfono.
+- **Confirmación de descenso.** El servidor libera el viaje solo tras `TRIP_DURATION_MS`
+  (Escenario 5); falta el botón para que el pasajero confirme que ya se bajó, que es lo que
+  cerraría el par origen-destino con tiempo real de recorrido.
 - **`better-sqlite3` no compila en Node 24 sin Visual Studio Build Tools.** Es un problema de
   entorno del backend, no de la app; ver la nota en el commit que conectó el mapa.
 - **Identidad visual.** La paleta de estas pantallas (magenta `#E244AE`, lima `#CAFF94`, verde
