@@ -136,49 +136,30 @@ Las pruebas de `test/` montan cada pantalla en ocho tamaños reales —de iPhone
 con tipografía al doble y con el teclado abierto, y fallan si algo desborda. Si vuelves a meter
 un tamaño en píxeles duros, se entera ahí y no en la demo.
 
-## Propuesta pendiente: el destino no se guarda
+## Resuelto: el destino ya se guarda
 
-El flujo ya exige declarar el destino antes de abordar, pero **`POST /boarding-signals` no
-tiene dónde recibirlo**: su cuerpo es `{user_id, stop_id, route_id, intent}`. Hoy el destino
-solo vive en el cliente, donde sirve para elegir ruta y parada de bajada, y se pierde al
-cerrar la app.
+`POST /boarding-signals` ahora acepta, opcionalmente, `destination_stop_id`,
+`destination_lat` y `destination_lng`. Es aditivo — si el cliente no los
+manda, se guardan como `NULL` y todo sigue igual. Falta que el cliente de la
+app los mande realmente (`lib/data/api_client.dart`); el dato ya vive en
+`trip_plan.dart`, solo hace falta pasarlo en la llamada.
 
-Sin persistirlo, la señal sigue diciendo "alguien espera en la parada 3" y no "alguien va de la
-parada 3 a la 5". La diferencia importa para el panel institucional: con pares origen-destino se
-puede estimar la carga por tramo del corredor, no solo la fila en un punto.
+## Resuelto: `/card-taps` ya reutiliza la señal declarada
 
-Cambio mínimo propuesto (**no implementado** — `CLAUDE.md` pide no inventar rutas ni campos sin
-acordarlo):
+`POST /card-taps` ahora acepta un `boarding_signal_id` opcional: si viene,
+marca **esa** señal como `boarded` (recalculando la demanda de su parada y
+agendando la auto-liberación) en vez de crear una nueva sin parada asociada.
+Sin ese campo se comporta exactamente como antes.
 
-```
-POST /boarding-signals
-{ user_id, stop_id, route_id, intent,
-  destination_stop_id,        // parada de bajada declarada
-  destination_lat,            // punto exacto que eligió el usuario,
-  destination_lng }           // por si no coincide con la parada
-```
+**Pendiente del lado de la app**: reemplazar el parche que cierra la señal
+como `expired` al pasar la tarjeta — ahora hay que mandar
+`boarding_signal_id` (el `id` que devolvió el `POST /boarding-signals`
+original) en el body de `/card-taps` en su lugar.
 
-Y en `boarding_signals`, tres columnas opcionales con los mismos nombres. Es aditivo: los
-clientes que no manden esos campos siguen funcionando igual.
-
-## Otra brecha de contrato: `/card-taps` duplica la señal
-
-`POST /card-taps` **crea su propia señal de abordaje** con `stop_id` nulo, en vez de reutilizar
-la que el pasajero ya declaró en la parada. `CLAUDE.md` describe el tap como un atajo que
-"salta directo a abordado, sin pasar por voy a abordar", así que no contempla que exista una
-declaración previa — pero en este flujo siempre existe.
-
-Mientras tanto, la app cierra la señal declarada como `expired` al pasar la tarjeta, para que
-el panel institucional no siga contando a alguien que ya subió. Es un parche: `expired`
-significa "no abordó", que es justo lo contrario de lo que pasó.
-
-Cambio propuesto (**no implementado**): que `/card-taps` acepte un `boarding_signal_id`
-opcional y, cuando venga, marque esa señal como `boarded` en vez de crear otra.
-
-**Y un detalle de operación:** `POST /trips/:id/rating` exige que la señal siga en `boarded`,
-pero `TRIP_DURATION_MS` (20 s por defecto) la pasa sola a `alighted`. En una demo real el viaje
-dura más que eso y la calificación fallaría. Correr el servidor con
-`TRIP_DURATION_MS=600000` mientras se demuestra.
+**Detalle de operación ya resuelto**: `TRIP_DURATION_MS` default subió de
+20s a 15 min, así que una demo normal ya no debería toparse con la
+calificación fallando por auto-liberación prematura. Sigue siendo
+configurable si hace falta más margen.
 
 ## Pendientes conocidos
 

@@ -40,11 +40,11 @@ No construyas nada fuera de estos escenarios sin preguntar primero — es fácil
 ### REST
 - `GET /routes` — lista de rutas con sus paradas (`id, name, mode, color_hex, stops: [{id, name, lat, lng, sequence}]`)
 - `POST /users` — crea un usuario demo (`name, role`)
-- `POST /boarding-signals` — confirma intención (`user_id, stop_id, route_id, intent`) → crea el registro en estado `waiting`
+- `POST /boarding-signals` — confirma intención (`user_id, stop_id, route_id, intent`, y opcionalmente `destination_stop_id, destination_lat, destination_lng` — destino declarado por el pasajero antes de abordar) → crea el registro en estado `waiting`
 - `PATCH /boarding-signals/:id` — actualiza estado (`status: 'boarded' | 'alighted' | 'expired'`)
 - `GET /demand/stops` — conteo agregado de `waiting` por parada, para el panel institucional
 - `GET /stops/:id/eta` *(Escenario 2, agregado por el backend)* — ETA simple (`distance_km, eta_minutes`, ambos `null` si el vehículo de esa ruta aún no reportó posición); regla fija `distancia en línea recta / 15 km/h`, no sobre el trazado real de la ruta
-- `POST /card-taps` *(Escenario 6)* — simula un tap (`card_uid, vehicle_id, tapped_at`)
+- `POST /card-taps` *(Escenario 6)* — simula un tap (`card_uid, vehicle_id, tapped_at`, y opcionalmente `boarding_signal_id` para marcar como `boarded` una señal ya declarada en una parada, en vez de crear una nueva sin parada asociada)
 - `POST /trips/:id/rating` *(Escenario 7)* — calificación (`rating 1-5, comment?`)
 - `POST /incidents` *(Escenario 7)* — reporte (`user_id, route_id, category, description`)
 
