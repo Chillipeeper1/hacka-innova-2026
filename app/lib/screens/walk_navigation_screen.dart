@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import '../data/models.dart';
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
+import '../data/walk_route.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/stop_confirmation.dart';
@@ -89,12 +90,8 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
       );
     }
 
-    final remaining = const Distance()(
-      position,
-      option.boardingStop.location,
-    );
-    // ~1.4 m/s, que es caminar normal.
-    final minutes = math.max(1, (remaining / 1.4 / 60).round());
+    final remaining = const Distance()(position, option.boardingStop.location);
+    final minutes = minutesOnFoot(remaining);
     final eta = ref.watch(stopEtaProvider(option.boardingStop.id));
 
     return Scaffold(
@@ -127,23 +124,22 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
 
                   Align(
                     alignment: Alignment.bottomCenter,
-                    child:
-                        arrived
-                            ? StopConfirmation(
-                              width: width,
-                              maxHeight: constraints.maxHeight,
-                              option: option,
-                              title: '¿Confirmar parada?',
-                              actionLabel: 'Confirmar',
-                              etaMinutes: eta.value?.etaMinutes,
-                              busy: _submitting,
-                              onConfirm: () => _confirmBoarding(option),
-                            )
-                            : _WalkSheet(
-                              width: width,
-                              maxHeight: constraints.maxHeight,
-                              minutes: minutes,
-                            ),
+                    child: arrived
+                        ? StopConfirmation(
+                            width: width,
+                            maxHeight: constraints.maxHeight,
+                            option: option,
+                            title: '¿Confirmar parada?',
+                            actionLabel: 'Confirmar',
+                            etaMinutes: eta.value?.etaMinutes,
+                            busy: _submitting,
+                            onConfirm: () => _confirmBoarding(option),
+                          )
+                        : _WalkSheet(
+                            width: width,
+                            maxHeight: constraints.maxHeight,
+                            minutes: minutes,
+                          ),
                   ),
 
                   if (_error != null)

@@ -54,6 +54,14 @@ class AppColors {
   /// Trazado de la caminata hacia la parada.
   static const Color walkPath = Color(0xFF0004FF);
 
+  /// Zonas por las que no se recomienda caminar.
+  ///
+  /// Rojo porque es la única señal que no hay que aprender a leer. El área va translúcida: lo
+  /// que importa es que se vea el mapa por debajo — quien camina necesita saber qué calles son
+  /// las marcadas, no solo que hay una mancha.
+  static const Color unsafeZone = Color(0xFFD32F2F);
+  static const Color unsafeZoneArea = Color(0xFFFF3B30);
+
   /// Velo sobre el mapa cuando se pide una confirmación.
   static const Color modalScrim = Color(0x8A000000); // negro al 54%
 
@@ -91,7 +99,11 @@ class AppFonts {
 
   /// Cuerpo de texto.
   static const String body = 'Satoshi';
-  static const List<String> bodyFallback = ['Inter', 'Helvetica Neue', 'Roboto'];
+  static const List<String> bodyFallback = [
+    'Inter',
+    'Helvetica Neue',
+    'Roboto',
+  ];
 
   /// Etiquetas de botón.
   static const String button = 'League Spartan';

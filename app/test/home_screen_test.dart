@@ -22,6 +22,7 @@ void main() {
     VoidCallback? onSearchStop,
     VoidCallback? onTravelByBike,
     VoidCallback? onTravelWalking,
+    VoidCallback? onTravelByCableCar,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
@@ -44,6 +45,7 @@ void main() {
               onSearchStop: onSearchStop,
               onTravelByBike: onTravelByBike,
               onTravelWalking: onTravelWalking,
+              onTravelByCableCar: onTravelByCableCar,
             ),
           ),
         ),
@@ -90,6 +92,7 @@ void main() {
         expect(find.text('¿A dónde vas?'), findsOneWidget);
         expect(find.text('Viajar en bici...'), findsOneWidget);
         expect(find.text('Viajar caminando...'), findsOneWidget);
+        expect(find.text('Viajar en teleférico...'), findsOneWidget);
       });
     });
   });
@@ -199,5 +202,19 @@ void main() {
 
     final card = tester.getSize(find.byType(SearchStopCard));
     expect(card.width, lessThanOrEqualTo(maxContentWidth));
+  });
+
+  testWidgets('el teleférico responde al toque', (tester) async {
+    var tapped = false;
+    await pumpAt(
+      tester,
+      const Size(402, 874),
+      onTravelByCableCar: () => tapped = true,
+    );
+    expectNoLayoutError(tester, 'teleférico');
+
+    await tester.tap(find.text('Viajar en teleférico...'));
+    await tester.pump();
+    expect(tapped, isTrue);
   });
 }

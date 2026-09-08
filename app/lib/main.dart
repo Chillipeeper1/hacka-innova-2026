@@ -3,7 +3,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/bike_trip.dart';
+import 'data/cable_car_trip.dart';
 import 'data/trip_plan.dart';
+import 'data/walk_trip.dart';
 import 'screens/confirm_stop_screen.dart';
 import 'screens/destination_screen.dart';
 import 'screens/home_screen.dart';
@@ -12,10 +14,12 @@ import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
 import 'screens/bike_trip_screen.dart';
+import 'screens/cable_car_trip_screen.dart';
 import 'screens/board_bus_screen.dart';
 import 'screens/onboard_trip_screen.dart';
 import 'screens/rating_screen.dart';
 import 'screens/walk_navigation_screen.dart';
+import 'screens/walk_trip_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -55,6 +59,12 @@ class MtappApp extends StatelessWidget {
         AppRoutes.rating: (context) => const _RatingRoute(),
         AppRoutes.bikeDestination: (context) => const _BikeDestinationRoute(),
         AppRoutes.bikeTrip: (context) => const _BikeTripRoute(),
+        AppRoutes.onFootDestination: (context) =>
+            const _OnFootDestinationRoute(),
+        AppRoutes.onFootTrip: (context) => const _OnFootTripRoute(),
+        AppRoutes.cableCarDestination: (context) =>
+            const _CableCarDestinationRoute(),
+        AppRoutes.cableCarTrip: (context) => const _CableCarTripRoute(),
       },
     );
   }
@@ -80,6 +90,14 @@ class AppRoutes {
   /// por eso no reusa `/destino` — esa pantalla lleva al selector de paradas.
   static const String bikeDestination = '/destino-bici';
   static const String bikeTrip = '/en-bici';
+
+  /// Caminar como viaje propio. No confundir con [walk], que es el tramo a pie **hacia una
+  /// parada** dentro del viaje en camión.
+  static const String onFootDestination = '/destino-a-pie';
+  static const String onFootTrip = '/a-pie';
+
+  static const String cableCarDestination = '/destino-telef';
+  static const String cableCarTrip = '/en-telef';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -160,7 +178,14 @@ class _HomeRoute extends ConsumerWidget {
         ref.read(bikeTripProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.bikeDestination);
       },
-      onTravelWalking: () => _pending(context, 'Viaje caminando'),
+      onTravelWalking: () {
+        ref.read(walkTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.onFootDestination);
+      },
+      onTravelByCableCar: () {
+        ref.read(cableCarTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.cableCarDestination);
+      },
     );
   }
 }
@@ -318,6 +343,89 @@ class _BikeTripRoute extends ConsumerWidget {
     }
 
     return BikeTripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished: finish,
+      onCancel: finish,
+    );
+  }
+}
+
+/// A pie, paso 1: a dónde va.
+class _OnFootDestinationRoute extends ConsumerWidget {
+  const _OnFootDestinationRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: (destination) {
+        ref.read(walkTripProvider.notifier).start(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.onFootTrip);
+      },
+    );
+  }
+}
+
+/// A pie, paso 2: el camino, esquivando las zonas marcadas.
+class _OnFootTripRoute extends ConsumerWidget {
+  const _OnFootTripRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void finish() {
+      ref.read(walkTripProvider.notifier).reset();
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
+    }
+
+    return WalkTripScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onFinished: finish,
+      onCancel: finish,
+    );
+  }
+}
+
+/// Teleférico, paso 1: a dónde va.
+class _CableCarDestinationRoute extends ConsumerWidget {
+  const _CableCarDestinationRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onConfirm: (destination) {
+        ref.read(cableCarTripProvider.notifier).start(destination);
+        Navigator.pushReplacementNamed(context, AppRoutes.cableCarTrip);
+      },
+    );
+  }
+}
+
+/// Teleférico, paso 2: el viaje. Las estaciones las elige el sistema, no el usuario: son
+/// siempre la más cercana a él y la que lo deja más cerca, así que no hay nada que preguntar.
+class _CableCarTripRoute extends ConsumerWidget {
+  const _CableCarTripRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void finish() {
+      ref.read(cableCarTripProvider.notifier).reset();
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRoutes.home,
+        (route) => false,
+      );
+    }
+
+    return CableCarTripScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
       onFinished: finish,
