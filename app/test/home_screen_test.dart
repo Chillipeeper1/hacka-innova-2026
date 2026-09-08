@@ -1,15 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maas_morelia/data/models.dart';
+import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/screens/home_screen.dart';
 import 'package:maas_morelia/theme.dart';
 import 'package:maas_morelia/widgets/map_chrome.dart';
 
+import 'support/fakes.dart';
+
 void main() {
+  late FakeRealtimeClient realtime;
+
+  setUp(() => realtime = FakeRealtimeClient());
+
   Future<void> pumpAt(
     WidgetTester tester,
     Size size, {
     double textScale = 1.0,
+    FakeApi? api,
     VoidCallback? onSearchStop,
     VoidCallback? onTravelByBike,
     VoidCallback? onTravelWalking,
@@ -19,27 +29,36 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAppTheme(),
-        home: MediaQuery(
-          data: MediaQueryData(
-            size: size,
-            textScaler: TextScaler.linear(textScale),
-          ),
-          child: HomeScreen(
-            onSearchStop: onSearchStop,
-            onTravelByBike: onTravelByBike,
-            onTravelWalking: onTravelWalking,
+      ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue((api ?? FakeApi()).build()),
+          realtimeClientProvider.overrideWithValue(realtime),
+        ],
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: size,
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: HomeScreen(
+              onSearchStop: onSearchStop,
+              onTravelByBike: onTravelByBike,
+              onTravelWalking: onTravelWalking,
+            ),
           ),
         ),
       ),
     );
+    // El primer bombeo monta; los siguientes dejan resolver los futuros del catálogo y del
+    // conteo de demanda, y entregar los eventos del canal en vivo.
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 10));
   }
 
   /// Las teselas se piden por red y en pruebas eso siempre falla: el cliente HTTP de
-  /// `flutter_test` responde 400 a todo. Ese error no dice nada sobre el layout, que es lo
-  /// que aquí se verifica, así que se descarta a propósito.
+  /// `flutter_test` responde 400 a todo. Ese error no dice nada sobre el layout.
   void expectNoLayoutError(WidgetTester tester, String context) {
     final exception = tester.takeException();
     if (exception == null) return;
@@ -92,6 +111,76 @@ void main() {
     expect(find.byType(TileLayer), findsOneWidget);
   });
 
+  testWidgets('dibuja las rutas del backend con su color', (tester) async {
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'rutas');
+
+    final layer = tester.widget<PolylineLayer>(find.byType(PolylineLayer));
+    expect(layer.polylines, hasLength(2), reason: 'las dos rutas del seed');
+
+    // #0E5E56 es el color de la primera ruta en los datos semilla. Se compara solo el RGB:
+    // la línea se dibuja translúcida para no tapar las calles debajo.
+    expect(layer.polylines.first.color.toARGB32() & 0x00FFFFFF, 0x0E5E56);
+  });
+
+  testWidgets('dibuja las cinco paradas del catálogo', (tester) async {
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'paradas');
+
+    expect(find.bySemanticsLabel('Parada Catedral de Morelia'), findsWidgets);
+    expect(
+      find.bySemanticsLabel('Parada Acueducto de Morelia'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('la unidad aparece cuando llega su posición en vivo', (
+    tester,
+  ) async {
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'sin unidades');
+
+    expect(find.bySemanticsLabel('Unidad en ruta'), findsNothing);
+
+    realtime.emitVehicle(
+      const VehiclePosition(vehicleId: 1, lat: 19.6989, lng: -101.1789),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    expectNoLayoutError(tester, 'con unidad');
+
+    expect(find.bySemanticsLabel('Unidad en ruta'), findsOneWidget);
+  });
+
+  testWidgets('la insignia de demanda aparece al llegar demand:update', (
+    tester,
+  ) async {
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'demanda inicial');
+
+    expect(find.text('3'), findsNothing);
+
+    realtime.emitDemand(const DemandCount(stopId: 1, waitingCount: 3));
+    await tester.pump(const Duration(milliseconds: 10));
+    expectNoLayoutError(tester, 'demanda actualizada');
+
+    expect(find.text('3'), findsOneWidget);
+  });
+
+  testWidgets('avisa cuando el backend no responde', (tester) async {
+    // Un servidor apagado se ve igual que un mapa sin unidades: sin aviso, en la demo se
+    // confunde con que la app está rota.
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'conectado');
+
+    expect(find.textContaining('Sin conexión'), findsNothing);
+
+    realtime.emitConnection(connected: false);
+    await tester.pump(const Duration(milliseconds: 10));
+    expectNoLayoutError(tester, 'desconectado');
+
+    expect(find.textContaining('tiempo real'), findsOneWidget);
+  });
+
   testWidgets('atribuye a OpenStreetMap, como exige la licencia', (
     tester,
   ) async {
@@ -107,8 +196,6 @@ void main() {
     await pumpAt(tester, const Size(402, 874));
     expectNoLayoutError(tester, 'accesibilidad');
 
-    // Los botones de icono suelto necesitan etiqueta explícita; la tarjeta de búsqueda se
-    // anuncia sola por su texto visible.
     expect(find.bySemanticsLabel('Abrir menú'), findsOneWidget);
     expect(find.bySemanticsLabel('Mi perfil'), findsOneWidget);
     expect(find.bySemanticsLabel('Buscar parada...'), findsOneWidget);
@@ -144,8 +231,6 @@ void main() {
     expectNoLayoutError(tester, 'alto de la hoja');
 
     final sheet = tester.getSize(find.byType(TravelOptionTile).first);
-    // Con tipografía al doble los renglones crecen, pero la hoja se limita al 55% del alto
-    // y desplaza por dentro en vez de tapar el mapa.
     expect(sheet.height, lessThan(size.height * 0.55));
   });
 

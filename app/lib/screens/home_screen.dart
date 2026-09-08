@@ -2,21 +2,25 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
+import '../data/models.dart';
+import '../data/providers.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/map_chrome.dart';
+import '../widgets/stop_sheet.dart';
 
 /// Pantalla principal del pasajero.
 ///
-/// Implementa el diseño de Figma ("HACKA", nodo 17:284) y es el Escenario 1 de `CLAUDE.md`:
-/// el mapa con el selector de modo de transporte.
+/// Implementa el diseño de Figma ("HACKA", nodo 17:284) y cubre el Escenario 1 de
+/// `CLAUDE.md`: el mapa con las rutas, sus paradas y la unidad en vivo.
 ///
 /// El diseño usa una captura de pantalla de Google Maps como fondo. Aquí va un mapa de verdad
 /// con `flutter_map` sobre teselas de OpenStreetMap, que es el stack que pide `CLAUDE.md`:
-/// incrustar la captura habría dado una imagen fija que no hace zoom, no se desplaza y no
-/// puede recibir paradas ni unidades encima.
-class HomeScreen extends StatelessWidget {
+/// sobre una captura no se podrían pintar las rutas ni mover la unidad.
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({
     super.key,
     this.onMenu,
@@ -33,7 +37,7 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback? onTravelWalking;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -89,6 +93,7 @@ class HomeScreen extends StatelessWidget {
                                 width: width,
                                 onTap: onSearchStop,
                               ),
+                              const _BackendStatusBanner(),
                             ],
                           ),
                         ),
@@ -123,12 +128,16 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/// El mapa.
-class _MoreliaMap extends StatelessWidget {
+/// El mapa, con las rutas, sus paradas y las unidades en vivo.
+class _MoreliaMap extends ConsumerWidget {
   const _MoreliaMap();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final routes = ref.watch(routesProvider).value ?? const <TransitRoute>[];
+    final vehicles = ref.watch(vehiclePositionsProvider);
+    final demand = ref.watch(demandProvider).value ?? const <int, int>{};
+
     return FlutterMap(
       options: MapOptions(
         initialCenter: Morelia.center,
@@ -147,6 +156,58 @@ class _MoreliaMap extends StatelessWidget {
           userAgentPackageName: Morelia.userAgentPackageName,
           maxZoom: Morelia.maxZoom,
         ),
+
+        // El trazado une paradas consecutivas: el mockup no tiene geometría de calles, y el
+        // motor de ruteo real es cosa de la versión de producción.
+        PolylineLayer(
+          polylines: [
+            for (final route in routes)
+              if (route.shape.length > 1)
+                Polyline(
+                  points: route.shape,
+                  color: colorFromHex(route.colorHex).withValues(alpha: 0.85),
+                  strokeWidth: 5,
+                ),
+          ],
+        ),
+
+        MarkerLayer(
+          markers: [
+            for (final route in routes)
+              for (final stop in route.stops)
+                Marker(
+                  point: stop.location,
+                  width: 44,
+                  height: 44,
+                  child: _StopMarker(
+                    stop: stop,
+                    routeId: route.id,
+                    color: colorFromHex(route.colorHex),
+                    waiting: demand[stop.id] ?? 0,
+                  ),
+                ),
+          ],
+        ),
+
+        MarkerLayer(
+          markers: [
+            for (final vehicle in vehicles.values)
+              Marker(
+                point: vehicle.location,
+                width: 40,
+                height: 40,
+                child: _VehicleMarker(
+                  color: colorFromHex(
+                    routes
+                        .where((route) => route.id == vehicle.routeId)
+                        .map((route) => route.colorHex)
+                        .firstOrNull,
+                  ),
+                ),
+              ),
+          ],
+        ),
+
         const MarkerLayer(markers: [_userLocationMarker]),
       ],
     );
@@ -164,6 +225,128 @@ class _MoreliaMap extends StatelessWidget {
   );
 }
 
+/// Parada tocable. Al tocarla se abre la hoja con el ETA y la confirmación de abordaje.
+class _StopMarker extends StatelessWidget {
+  const _StopMarker({
+    required this.stop,
+    required this.routeId,
+    required this.color,
+    required this.waiting,
+  });
+
+  final Stop stop;
+  final int routeId;
+  final Color color;
+  final int waiting;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Parada ${stop.name}',
+      child: GestureDetector(
+        onTap: () async {
+          final boarded = await StopSheet.show(
+            context,
+            stop: stop,
+            routeId: routeId,
+          );
+          if (boarded == true && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Te esperamos en ${stop.name}')),
+            );
+          }
+        },
+        child: Center(
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 3,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+              // Insignia con el conteo de gente esperando: es la señal de demanda del
+              // proyecto, visible en el mismo mapa y no solo en el panel institucional.
+              if (waiting > 0)
+                Positioned(
+                  top: -4,
+                  right: -8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.magenta,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      '$waiting',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Unidad en movimiento.
+class _VehicleMarker extends StatelessWidget {
+  const _VehicleMarker({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      // `container: true`: sin él la etiqueta no llega a formar un nodo propio y el lector de
+      // pantalla no anuncia la unidad.
+      container: true,
+      label: 'Unidad en ruta',
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: 3),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x40000000),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: SvgPicture.asset('assets/icons/bus.svg'),
+        ),
+      ),
+    );
+  }
+}
+
 class _UserLocationDot extends StatelessWidget {
   const _UserLocationDot();
 
@@ -175,8 +358,61 @@ class _UserLocationDot extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 3),
         boxShadow: const [
-          BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1)),
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Aviso de que el backend no responde.
+///
+/// Sin él, un servidor apagado se ve idéntico a un mapa sin unidades circulando, y en una
+/// demo eso se confunde con que la app está rota.
+class _BackendStatusBanner extends ConsumerWidget {
+  const _BackendStatusBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final routes = ref.watch(routesProvider);
+    final connected = ref.watch(realtimeConnectedProvider).value;
+
+    final hasProblem = routes.hasError || connected == false;
+    if (!hasProblem) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppRadius.squareButton),
+          boxShadow: AppShadows.squareButton,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.cloud_off,
+                size: 18,
+                color: AppColors.magentaDeep,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  routes.hasError
+                      ? 'Sin conexión con el servidor. Revisa que `server/` esté corriendo.'
+                      : 'Se perdió el tiempo real. Reintentando...',
+                  style: const TextStyle(fontSize: 13, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

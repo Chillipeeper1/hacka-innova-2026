@@ -202,3 +202,17 @@ ThemeData buildAppTheme() {
     snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
   );
 }
+
+/// Convierte el `color_hex` que manda el backend a un [Color].
+///
+/// Tolera que venga con o sin `#` y con o sin canal alfa. Si el valor no se puede leer,
+/// devuelve [fallback] en vez de reventar: un color mal escrito en la semilla no debe tumbar
+/// el mapa completo.
+Color colorFromHex(String? hex, {Color fallback = AppColors.green}) {
+  if (hex == null) return fallback;
+  var value = hex.trim().replaceFirst('#', '');
+  if (value.length == 6) value = 'FF$value';
+  if (value.length != 8) return fallback;
+  final parsed = int.tryParse(value, radix: 16);
+  return parsed == null ? fallback : Color(parsed);
+}
