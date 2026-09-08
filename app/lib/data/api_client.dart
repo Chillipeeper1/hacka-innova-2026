@@ -74,11 +74,20 @@ class ApiClient {
   }
 
   /// Declara la intención del pasajero — el diferenciador del proyecto.
+  ///
+  /// El destino viaja con la señal cuando se conoce: es lo que deja al panel institucional ver
+  /// no solo dónde sube la gente, sino hacia dónde va. Se manda la parada de bajada **y** el
+  /// punto exacto, porque la parada es una aproximación al lugar al que el pasajero realmente
+  /// quiere llegar, y la diferencia entre las dos es justamente lo que hay que medir para
+  /// saber si la red le sirve.
   Future<BoardingSignal> createBoardingSignal({
     required int userId,
     required int stopId,
     required int routeId,
     required BoardingIntent intent,
+    int? destinationStopId,
+    double? destinationLat,
+    double? destinationLng,
   }) async {
     final response = await _http.post(
       _uri('/boarding-signals'),
@@ -88,6 +97,9 @@ class ApiClient {
         'stop_id': stopId,
         'route_id': routeId,
         'intent': intent.wireValue,
+        'destination_stop_id': ?destinationStopId,
+        'destination_lat': ?destinationLat,
+        'destination_lng': ?destinationLng,
       }),
     );
     final body = _decodeMap(response, 'POST /boarding-signals');
@@ -96,20 +108,24 @@ class ApiClient {
 
   /// Registra un tap de tarjeta de movilidad (Escenario 6).
   ///
-  /// OJO: el endpoint **crea su propia señal de abordaje** con `stop_id` nulo y estado
-  /// `boarded`; no reutiliza la que el pasajero ya declaró en la parada. `CLAUDE.md` describe
-  /// el tap como un atajo que "salta directo a abordado, sin pasar por voy a abordar", así que
-  /// no contempla que exista una declaración previa. Ver la nota en `app/README.md`.
+  /// Con [boardingSignalId] el servidor **reutiliza** la señal que el pasajero ya declaró en la
+  /// parada y la marca `boarded`. Sin él se comporta como el atajo que describe `CLAUDE.md` —el
+  /// tap salta directo a "abordado"— y crea una señal nueva sin parada asociada.
   ///
-  /// Devuelve el `boarding_signal_id` que creó, que es el viaje sobre el que se califica.
+  /// Devuelve el `boarding_signal_id` del viaje: el mismo que se le pasó, o el que creó.
   Future<int> createCardTap({
     required String cardUid,
     required int vehicleId,
+    int? boardingSignalId,
   }) async {
     final response = await _http.post(
       _uri('/card-taps'),
       headers: _jsonHeaders,
-      body: jsonEncode({'card_uid': cardUid, 'vehicle_id': vehicleId}),
+      body: jsonEncode({
+        'card_uid': cardUid,
+        'vehicle_id': vehicleId,
+        'boarding_signal_id': ?boardingSignalId,
+      }),
     );
     final body = _decodeMap(response, 'POST /card-taps');
     return (body['boarding_signal_id'] as num).toInt();
@@ -185,7 +201,11 @@ class ApiClient {
 }
 
 class ApiException implements Exception {
-  const ApiException({required this.what, required this.statusCode, this.message});
+  const ApiException({
+    required this.what,
+    required this.statusCode,
+    this.message,
+  });
 
   final String what;
   final int statusCode;

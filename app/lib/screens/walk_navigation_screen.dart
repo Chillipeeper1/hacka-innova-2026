@@ -55,6 +55,7 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
 
     try {
       final userId = await ref.read(demoUserIdProvider.future);
+      final destination = ref.read(tripPlanProvider).destination;
       final signal = await ref
           .read(apiClientProvider)
           .createBoardingSignal(
@@ -62,6 +63,11 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
             stopId: option.boardingStop.id,
             routeId: option.route.id,
             intent: BoardingIntent.boarding,
+            // El destino ya se sabe desde el primer paso del flujo, y ahora viaja con la
+            // señal en vez de quedarse solo en el teléfono.
+            destinationStopId: option.alightingStop.id,
+            destinationLat: destination?.latitude,
+            destinationLng: destination?.longitude,
           );
 
       ref.read(tripPlanProvider.notifier).markWaitingAtStop(signal.id);

@@ -56,18 +56,15 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
 
     try {
       final api = ref.read(apiClientProvider);
+      // El tap reutiliza la señal que ya se declaró en la parada. Antes creaba una nueva y
+      // había que cerrar la original como `expired`, que significaba lo contrario de lo que
+      // pasó: el pasajero no se fue sin subir, subió.
+      final declared = ref.read(tripPlanProvider).boardingSignalId;
       final tapSignalId = await api.createCardTap(
         cardUid: demoCardUid,
         vehicleId: vehicleId,
+        boardingSignalId: declared,
       );
-
-      // El tap crea su propia señal, así que la que se declaró en la parada dejaría de tener
-      // sentido y seguiría contando como gente esperando. Se cierra para que el conteo de
-      // demanda no quede inflado.
-      final declared = ref.read(tripPlanProvider).boardingSignalId;
-      if (declared != null && declared != tapSignalId) {
-        await api.updateBoardingSignal(signalId: declared, status: 'expired');
-      }
 
       ref
           .read(tripPlanProvider.notifier)

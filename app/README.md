@@ -173,9 +173,13 @@ un tamaño en píxeles duros, se entera ahí y no en la demo.
 
 `POST /boarding-signals` ahora acepta, opcionalmente, `destination_stop_id`,
 `destination_lat` y `destination_lng`. Es aditivo — si el cliente no los
-manda, se guardan como `NULL` y todo sigue igual. Falta que el cliente de la
-app los mande realmente (`lib/data/api_client.dart`); el dato ya vive en
-`trip_plan.dart`, solo hace falta pasarlo en la llamada.
+manda, se guardan como `NULL` y todo sigue igual.
+
+**La app ya los manda.** Al confirmar el abordaje en la parada
+(`walk_navigation_screen.dart`) viajan la parada de bajada y el punto exacto
+que el usuario eligió en el mapa. Se mandan los dos a propósito: la parada es
+una aproximación al lugar al que de verdad quiere llegar, y la diferencia
+entre ambos es justo lo que hay que medir para saber si la red le sirve.
 
 ## Resuelto: `/card-taps` ya reutiliza la señal declarada
 
@@ -184,10 +188,12 @@ marca **esa** señal como `boarded` (recalculando la demanda de su parada y
 agendando la auto-liberación) en vez de crear una nueva sin parada asociada.
 Sin ese campo se comporta exactamente como antes.
 
-**Pendiente del lado de la app**: reemplazar el parche que cierra la señal
-como `expired` al pasar la tarjeta — ahora hay que mandar
-`boarding_signal_id` (el `id` que devolvió el `POST /boarding-signals`
-original) en el body de `/card-taps` en su lugar.
+**La app ya lo usa.** `board_bus_screen.dart` manda el `boarding_signal_id`
+declarado en la parada, y el parche que cerraba la señal como `expired`
+desapareció. Aquel parche decía lo contrario de lo que había pasado —el
+pasajero no se fue sin subir, subió— y dejaba el viaje partido en dos
+registros. Ahora es uno solo de punta a punta, que además es el que se
+califica.
 
 **Detalle de operación ya resuelto**: `TRIP_DURATION_MS` default subió de
 20s a 15 min, así que una demo normal ya no debería toparse con la

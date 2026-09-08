@@ -34,9 +34,12 @@ void main() {
     final notifier = container.read(tripPlanProvider.notifier);
     notifier.setDestination(destinoBosque);
     // La opción más lejana evita elegir la parada donde el usuario ya está.
-    final option = container.read(tripPlanProvider).options.reduce(
-      (a, b) => a.metersToBoardingStop > b.metersToBoardingStop ? a : b,
-    );
+    final option = container
+        .read(tripPlanProvider)
+        .options
+        .reduce(
+          (a, b) => a.metersToBoardingStop > b.metersToBoardingStop ? a : b,
+        );
     notifier.choose(option);
     notifier.startWalking();
     notifier.markWaitingAtStop(101);
@@ -147,11 +150,7 @@ void main() {
       final api = FakeApi();
       final container = await waitingAtStop(api: api);
       var boarded = 0;
-      await pump(
-        tester,
-        container,
-        BoardBusScreen(onBoarded: () => boarded++),
-      );
+      await pump(tester, container, BoardBusScreen(onBoarded: () => boarded++));
 
       placeBus(container, busApproachingMeters - 40);
       await tester.pump(const Duration(milliseconds: 10));
@@ -168,11 +167,12 @@ void main() {
       expect(boarded, 1);
     });
 
-    testWidgets('el tap cierra la señal declarada para no inflar la demanda', (
+    testWidgets('el tap reutiliza la señal declarada en la parada', (
       tester,
     ) async {
-      // `POST /card-taps` crea su propia señal en vez de reutilizar la de la parada; si la
-      // original se quedara en `waiting`, el panel institucional contaría gente que ya subió.
+      // Antes el tap creaba una señal aparte y había que cerrar la declarada como `expired`,
+      // que significaba lo contrario de lo que pasó: el pasajero no se fue sin subir, subió.
+      // Ahora el servidor la reutiliza, así que el viaje es uno solo de punta a punta.
       final api = FakeApi();
       final container = await waitingAtStop(api: api);
       await pump(tester, container, const BoardBusScreen());
@@ -182,11 +182,19 @@ void main() {
       await tester.tap(find.text('Pasar tarjeta'));
       await tester.pumpAndSettle();
 
-      final patch = api.requests.firstWhere(
-        (r) => r.method == 'PATCH' && r.path.startsWith('/boarding-signals/'),
+      final tap = api.requests.firstWhere((r) => r.path == '/card-taps');
+      expect(tap.body!['boarding_signal_id'], 101);
+
+      // Y ya no se cierra nada como `expired`.
+      expect(
+        api.requests.any(
+          (r) => r.method == 'PATCH' && r.body?['status'] == 'expired',
+        ),
+        isFalse,
       );
-      expect(patch.path, '/boarding-signals/101');
-      expect(patch.body!['status'], 'expired');
+
+      // El viaje que se califica sigue siendo el declarado.
+      expect(container.read(tripPlanProvider).boardingSignalId, 101);
     });
 
     testWidgets('si la unidad arranca sin tap, se asume pago con monedas', (
@@ -195,11 +203,7 @@ void main() {
       final api = FakeApi();
       final container = await waitingAtStop(api: api);
       var boarded = 0;
-      await pump(
-        tester,
-        container,
-        BoardBusScreen(onBoarded: () => boarded++),
-      );
+      await pump(tester, container, BoardBusScreen(onBoarded: () => boarded++));
 
       placeBus(container, busApproachingMeters - 40);
       await tester.pump(const Duration(milliseconds: 10));
@@ -289,8 +293,11 @@ void main() {
 
       expect(find.text('Prepárate para bajar'), findsOneWidget);
       // El aviso nombra la parada de bajada del viaje, sea cual sea la opción elegida.
-      final alighting =
-          container.read(tripPlanProvider).chosen!.alightingStop.name;
+      final alighting = container
+          .read(tripPlanProvider)
+          .chosen!
+          .alightingStop
+          .name;
       expect(find.textContaining(alighting), findsWidgets);
       expect(find.textContaining('min'), findsWidgets);
     });
@@ -330,11 +337,7 @@ void main() {
       final api = FakeApi();
       final container = await arrived(api: api);
       var finished = 0;
-      await pump(
-        tester,
-        container,
-        RatingScreen(onFinished: () => finished++),
-      );
+      await pump(tester, container, RatingScreen(onFinished: () => finished++));
 
       await tester.tap(find.bySemanticsLabel('Omitir la calificación'));
       await tester.pumpAndSettle();
@@ -351,20 +354,14 @@ void main() {
       final api = FakeApi();
       final container = await arrived(api: api);
       var finished = 0;
-      await pump(
-        tester,
-        container,
-        RatingScreen(onFinished: () => finished++),
-      );
+      await pump(tester, container, RatingScreen(onFinished: () => finished++));
 
       await tester.tap(find.bySemanticsLabel('4 estrellas'));
       await tester.enterText(find.byType(TextField), 'Iba muy lleno');
       await tester.tap(find.text('Confirmar'));
       await tester.pumpAndSettle();
 
-      final rating = api.requests.firstWhere(
-        (r) => r.path.contains('/rating'),
-      );
+      final rating = api.requests.firstWhere((r) => r.path.contains('/rating'));
       expect(rating.path, '/trips/101/rating');
       expect(rating.body!['rating'], 4);
       expect(rating.body!['comment'], 'Iba muy lleno');

@@ -69,10 +69,9 @@ class FakeApi {
           RecordedRequest(
             method: request.method,
             path: path,
-            body:
-                request.body.isEmpty
-                    ? null
-                    : jsonDecode(request.body) as Map<String, dynamic>,
+            body: request.body.isEmpty
+                ? null
+                : jsonDecode(request.body) as Map<String, dynamic>,
           ),
         );
 
@@ -96,11 +95,18 @@ class FakeApi {
           );
         }
         if (path == '/card-taps') {
-          // El endpoint real crea su propia señal de abordaje; el doble devuelve un id
-          // distinto al declarado en la parada, que es justo lo que hay que manejar.
+          // Igual que el servidor real: con `boarding_signal_id` reutiliza esa señal y la
+          // devuelve; sin él, crea una nueva con otro id. El doble tiene que distinguirlo o
+          // la prueba no verificaría nada.
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final reused = body['boarding_signal_id'];
           return http.Response(
-            '{"id":9,"card_uid":"DEMO-0001","vehicle_id":1,'
-            '"boarding_signal_id":202}',
+            jsonEncode({
+              'id': 9,
+              'card_uid': body['card_uid'],
+              'vehicle_id': body['vehicle_id'],
+              'boarding_signal_id': reused ?? 202,
+            }),
             201,
           );
         }
@@ -116,7 +122,10 @@ class FakeApi {
         }
         if (path == '/boarding-signals') {
           if (boardingStatusCode != 201) {
-            return http.Response('{"error":"datos inválidos"}', boardingStatusCode);
+            return http.Response(
+              '{"error":"datos inválidos"}',
+              boardingStatusCode,
+            );
           }
           final body = jsonDecode(request.body) as Map<String, dynamic>;
           return http.Response(
@@ -126,8 +135,10 @@ class FakeApi {
               'stop_id': body['stop_id'],
               'route_id': body['route_id'],
               'intent': body['intent'],
-              'status':
-                  body['intent'] == 'boarding' ? 'waiting' : 'expired',
+              'status': body['intent'] == 'boarding' ? 'waiting' : 'expired',
+              'destination_stop_id': body['destination_stop_id'],
+              'destination_lat': body['destination_lat'],
+              'destination_lng': body['destination_lng'],
             }),
             201,
           );
