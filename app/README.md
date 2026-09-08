@@ -161,6 +161,42 @@ original) en el body de `/card-taps` en su lugar.
 calificación fallando por auto-liberación prematura. Sigue siendo
 configurable si hace falta más margen.
 
+## Nuevo: teleférico real + recomendación de transbordos (`GET /journeys`)
+
+`GET /routes` ahora incluye una tercera ruta (`mode: "teleferico"`, punto de
+transbordo real con la ruta de bus en "Bosque Cuauhtémoc") y una cuarta,
+larga (~9 km, `Ruta Salida a Charo`, combi), para poder probar recomendaciones
+a distancias reales.
+
+Además hay un endpoint nuevo, `GET /journeys`, con query params
+`origin_lat, origin_lng, destination_lat, destination_lng` y opcionalmente
+`modes` (coma-separado: `bike,combi,bus,teleferico` — modos *permitidos*;
+caminar siempre está disponible). La respuesta es
+`{ alternatives: [...] }` — sin `modes`, hasta 3 alternativas etiquetadas
+("Más rápida", "Sin bicicleta", "Con menos transbordos"); con `modes`, una
+sola respetando esa restricción. Esto es lo que efectivamente resuelve lo
+que pidieron: transbordos reales entre modos, alternativas para elegir, y
+la posibilidad de excluir un modo (ej. "no quiero bici") o forzar otros
+(ej. "solo bus y caminata"). Detalle completo y ejemplo de respuesta en
+`server/README.md`. Adoptarlo es su decisión — `buildOptions()` sigue
+funcionando igual si no lo usan.
+
+**Ojo con la demo**: la bici de `/journeys` es una línea recta simple (no
+usa el trazado fino de `bike_network.dart`), con un límite de 6 km
+(`MAX_BIKE_DISTANCE_KM`) más allá del cual deja de ofrecerse. Bajo ese
+límite, le gana casi siempre al transporte colectivo con transbordo por los
+tiempos fijos de espera — no es un bug, es lo que honestamente sale más
+rápido a esa escala. Para que la demo luzca el transbordo en vez de la
+bici, usen la ruta larga a Charo (o cualquier origen/destino a más de 6 km)
+o pasen `modes` sin `bike`. Nota completa en `server/README.md`.
+
+**Aviso de consistencia**: `averageBusSpeedKmh = 15` en `trip_plan.dart` ya
+no es universal — el servidor ahora usa una velocidad por modo
+(`speedForMode` en `server/src/lib/speeds.ts`): combi/bus siguen en 15 km/h,
+pero teleférico va a 20 km/h. Si la app sigue usando el número fijo para
+calcular el ETA de un tramo de teleférico, va a mostrar un tiempo distinto
+al que calcula `/stops/:id/eta` o `/journeys` para ese mismo tramo.
+
 ## Pendientes conocidos
 
 - **Tipografías.** El diseño usa Coolvetica, Nura, Satoshi y League Spartan. Los archivos no

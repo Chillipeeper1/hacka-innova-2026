@@ -1,19 +1,16 @@
 import { Router } from "express";
 import { db } from "../db";
 import { haversineKm } from "../lib/geo";
+import { speedForMode } from "../lib/speeds";
 
 export const stopsRouter = Router();
-
-// Valor fijo de mockup — velocidad promedio de una combi urbana en Morelia.
-// Ajustable; ver "ETA = distancia restante / velocidad promedio fija" en
-// documento-base-maas-morelia.md.
-const AVERAGE_SPEED_KMH = 15;
 
 interface StopRow {
   id: number;
   lat: number;
   lng: number;
   route_id: number;
+  mode: string;
 }
 
 interface VehicleRow {
@@ -31,7 +28,11 @@ stopsRouter.get("/stops/:id/eta", (req, res) => {
   }
 
   const stop = db
-    .prepare("SELECT id, lat, lng, route_id FROM stops WHERE id = ?")
+    .prepare(
+      `SELECT stops.id, stops.lat, stops.lng, stops.route_id, routes.mode
+       FROM stops JOIN routes ON routes.id = stops.route_id
+       WHERE stops.id = ?`
+    )
     .get(stopId) as StopRow | undefined;
   if (!stop) {
     res.status(404).json({ error: `stop ${stopId} no encontrada` });
@@ -61,7 +62,7 @@ stopsRouter.get("/stops/:id/eta", (req, res) => {
     { lat: vehicle.last_lat, lng: vehicle.last_lng },
     { lat: stop.lat, lng: stop.lng }
   );
-  const etaMinutes = (distanceKm / AVERAGE_SPEED_KMH) * 60;
+  const etaMinutes = (distanceKm / speedForMode(stop.mode)) * 60;
 
   res.json({
     stop_id: stop.id,

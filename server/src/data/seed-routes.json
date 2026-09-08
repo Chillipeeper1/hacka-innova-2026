@@ -1,5 +1,5 @@
 {
-  "_nota": "Coordenadas aproximadas ancladas en puntos de referencia reales y conocidos de Morelia (Catedral, Fuente de las Tarascas, Acueducto, Bosque Cuauhtémoc). NO son paradas de combi verificadas en campo — sirven únicamente para la demo. Antes de ir más allá del mockup, verifiquen y ajusten estas coordenadas con Google Maps, OpenStreetMap o un recorrido físico real.",
+  "_nota": "Coordenadas aproximadas ancladas en puntos de referencia reales y conocidos de Morelia (Catedral, Fuente de las Tarascas, Acueducto, Bosque Cuauhtémoc, Central de Autobuses, corredor de salida a Charo). NO son paradas de combi/estaciones de teleférico verificadas en campo — sirven únicamente para la demo, y la ruta de teleférico NO corresponde a las estaciones reales anunciadas por Sedum. La ruta a Charo es deliberadamente larga (~9 km) para poder probar el motor de recomendación a distancias reales, más allá del clúster céntrico de las demás rutas. Antes de ir más allá del mockup, verifiquen y ajusten estas coordenadas con Google Maps, OpenStreetMap o un recorrido físico real.",
   "routes": [
     {
       "id": 1,
@@ -20,6 +20,27 @@
       "stops": [
         { "name": "Catedral de Morelia", "lat": 19.7008, "lng": -101.1844, "sequence": 1 },
         { "name": "Bosque Cuauhtémoc", "lat": 19.6917, "lng": -101.1770, "sequence": 2 }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Teleférico Bosque - Central",
+      "mode": "teleferico",
+      "color_hex": "#7B2FF7",
+      "stops": [
+        { "name": "Bosque Cuauhtémoc", "lat": 19.6917, "lng": -101.1770, "sequence": 1 },
+        { "name": "Central de Autobuses", "lat": 19.6870, "lng": -101.1620, "sequence": 2 }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Ruta Salida a Charo",
+      "mode": "combi",
+      "color_hex": "#2A9D8F",
+      "stops": [
+        { "name": "Catedral de Morelia", "lat": 19.7008, "lng": -101.1844, "sequence": 1 },
+        { "name": "Av. Solidaridad y Charo", "lat": 19.7120, "lng": -101.1480, "sequence": 2 },
+        { "name": "Charo Centro", "lat": 19.7386, "lng": -101.1041, "sequence": 3 }
       ]
     }
   ]
