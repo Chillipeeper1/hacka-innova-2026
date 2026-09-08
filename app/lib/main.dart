@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'screens/destination_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -36,6 +37,7 @@ class MtappApp extends StatelessWidget {
         AppRoutes.register: (context) => const _RegisterRoute(),
         AppRoutes.signIn: (context) => const _SignInRoute(),
         AppRoutes.home: (context) => const _HomeRoute(),
+        AppRoutes.destination: (context) => const _DestinationRoute(),
       },
     );
   }
@@ -48,6 +50,7 @@ class AppRoutes {
   static const String register = '/registro';
   static const String signIn = '/entrar';
   static const String home = '/inicio';
+  static const String destination = '/destino';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -123,9 +126,35 @@ class _HomeRoute extends StatelessWidget {
     return HomeScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      onSearchStop: () => _pending(context, 'Búsqueda de paradas'),
+      onSearchStop:
+          () => Navigator.pushNamed(context, AppRoutes.destination),
       onTravelByBike: () => _pending(context, 'Viaje en bici'),
       onTravelWalking: () => _pending(context, 'Viaje caminando'),
+    );
+  }
+}
+
+class _DestinationRoute extends StatelessWidget {
+  const _DestinationRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return DestinationScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      // TODO(ruteo): al confirmar debe calcularse el viaje contra `server/`. Por ahora
+      // regresa al mapa con el punto elegido.
+      onConfirm: (destination) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Destino: ${destination.latitude.toStringAsFixed(5)}, '
+              '${destination.longitude.toStringAsFixed(5)}',
+            ),
+          ),
+        );
+      },
     );
   }
 }

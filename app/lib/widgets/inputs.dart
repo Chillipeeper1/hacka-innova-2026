@@ -5,6 +5,8 @@
 /// pantalla.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -18,11 +20,16 @@ class PrimaryPillButton extends StatelessWidget {
     required this.label,
     required this.width,
     this.onPressed,
+    this.designHeight = 68,
   });
 
   final String label;
   final double width;
   final VoidCallback? onPressed;
+
+  /// El diseño usa 68-73 px en los formularios de acceso y 44 px en las hojas sobre el mapa,
+  /// donde el espacio vertical es escaso.
+  final double designHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +37,8 @@ class PrimaryPillButton extends StatelessWidget {
 
     return SizedBox(
       width: double.infinity,
-      height: 68 * s,
+      // Nunca por debajo del objetivo táctil mínimo recomendado, aunque el diseño encoja.
+      height: math.max(designHeight * s, 48),
       child: FilledButton(
         onPressed: onPressed,
         child: Text(

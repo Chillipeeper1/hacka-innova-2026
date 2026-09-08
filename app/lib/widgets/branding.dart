@@ -173,6 +173,7 @@ class CircleIconButton extends StatelessWidget {
     required this.diameter,
     this.background = AppColors.surfaceGrey,
     this.iconRatio = 0.48,
+    this.shadow,
     this.onTap,
   });
 
@@ -187,6 +188,9 @@ class CircleIconButton extends StatelessWidget {
   /// Proporción que ocupa el icono dentro del círculo.
   final double iconRatio;
 
+  /// Solo cuando flota sobre el mapa; en fondo blanco no hace falta.
+  final List<BoxShadow>? shadow;
+
   final VoidCallback? onTap;
 
   @override
@@ -194,20 +198,23 @@ class CircleIconButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      child: Material(
-        color: background,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox.square(
-            dimension: diameter,
-            child: Center(
-              child: SvgPicture.asset(
-                asset,
-                width: diameter * iconRatio,
-                height: diameter * iconRatio,
-                fit: BoxFit.contain,
+      child: DecoratedBox(
+        decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: shadow),
+        child: Material(
+          color: background,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox.square(
+              dimension: diameter,
+              child: Center(
+                child: SvgPicture.asset(
+                  asset,
+                  width: diameter * iconRatio,
+                  height: diameter * iconRatio,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ),

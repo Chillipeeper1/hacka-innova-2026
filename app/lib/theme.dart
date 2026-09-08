@@ -33,6 +33,10 @@ class AppColors {
   /// Relleno de los campos de formulario.
   static const Color field = Color(0xFFEDEDED);
 
+  /// Relleno del campo de dirección sobre el mapa: un gris apenas más marcado, porque va
+  /// sobre una hoja blanca con mucha luz alrededor.
+  static const Color fieldStrong = Color(0xFFE3E3E3);
+
   /// Texto de marcador dentro de un campo vacío: el mismo gris al 49%.
   static const Color placeholder = Color(0x7D8A8A8A);
 
@@ -123,6 +127,11 @@ class AppShadows {
   /// Botones cuadrados de la parte superior.
   static const List<BoxShadow> squareButton = [
     BoxShadow(color: _key, offset: Offset(4, 4), blurRadius: 4),
+  ];
+
+  /// Botón circular flotante sobre el mapa.
+  static const List<BoxShadow> circleButton = [
+    BoxShadow(color: _key, offset: Offset(3, 4), blurRadius: 4),
   ];
 
   /// Hoja inferior: la sombra va hacia arriba, contra el mapa.
