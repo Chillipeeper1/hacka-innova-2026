@@ -1,0 +1,26 @@
+{
+  "_nota": "Coordenadas aproximadas ancladas en puntos de referencia reales y conocidos de Morelia (Catedral, Fuente de las Tarascas, Acueducto, Bosque Cuauhtémoc). NO son paradas de combi verificadas en campo — sirven únicamente para la demo. Antes de ir más allá del mockup, verifiquen y ajusten estas coordenadas con Google Maps, OpenStreetMap o un recorrido físico real.",
+  "routes": [
+    {
+      "id": 1,
+      "name": "Ruta Centro - Acueducto",
+      "mode": "combi",
+      "color_hex": "#0E5E56",
+      "stops": [
+        { "name": "Catedral de Morelia", "lat": 19.7008, "lng": -101.1844, "sequence": 1 },
+        { "name": "Fuente de las Tarascas", "lat": 19.6989, "lng": -101.1789, "sequence": 2 },
+        { "name": "Acueducto de Morelia", "lat": 19.6975, "lng": -101.1791, "sequence": 3 }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Ruta Centro - Bosque",
+      "mode": "bus",
+      "color_hex": "#D19B3D",
+      "stops": [
+        { "name": "Catedral de Morelia", "lat": 19.7008, "lng": -101.1844, "sequence": 1 },
+        { "name": "Bosque Cuauhtémoc", "lat": 19.6917, "lng": -101.1770, "sequence": 2 }
+      ]
+    }
+  ]
+}

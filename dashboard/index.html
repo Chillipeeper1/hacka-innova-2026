@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Panel institucional — MaaS Morelia</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root {
+      --primario: #0E5E56;
+      --acento: #D19B3D;
+      --oscuro: #12312C;
+      --superficie: #FAF6EE;
+      --fondo: #F6F7F6;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--fondo);
+      color: var(--oscuro);
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      font-family: Cambria, Georgia, serif;
+      color: var(--oscuro);
+      font-size: 1.6rem;
+      margin-bottom: 0.25rem;
+    }
+    .status {
+      font-size: 0.85rem;
+      color: var(--primario);
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1.5rem;
+      background: var(--superficie);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(18, 49, 44, 0.1);
+    }
+    th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      background: var(--oscuro);
+      color: var(--superficie);
+      font-weight: 600;
+    }
+    td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid rgba(18, 49, 44, 0.08);
+    }
+    .count {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--primario);
+    }
+    .swatch {
+      display: inline-block;
+      width: 0.6rem;
+      height: 0.6rem;
+      border-radius: 50%;
+      margin-right: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Demanda de abordaje por parada</h1>
+  <p class="status" id="status">Conectando…</p>
+  <table>
+    <thead>
+      <tr><th>Ruta</th><th>Parada</th><th>Confirmaciones</th></tr>
+    </thead>
+    <tbody id="tabla-demanda"></tbody>
+  </table>
+
+  <script>
+    const SERVER_URL = "http://localhost:3001";
+    const tabla = document.getElementById("tabla-demanda");
+    const status = document.getElementById("status");
+
+    async function cargarRutas() {
+      const [rutas, demanda] = await Promise.all([
+        fetch(`${SERVER_URL}/routes`).then((r) => r.json()),
+        fetch(`${SERVER_URL}/demand/stops`).then((r) => r.json()),
+      ]);
+
+      const countPorStop = new Map(demanda.map((d) => [d.stop_id, d.waiting_count]));
+
+      for (const ruta of rutas) {
+        for (const stop of ruta.stops) {
+          const fila = document.createElement("tr");
+          const count = countPorStop.get(stop.id) ?? 0;
+          fila.innerHTML = `
+            <td><span class="swatch" style="background:${ruta.color_hex}"></span>${ruta.name}</td>
+            <td>${stop.name}</td>
+            <td class="count" id="count-${stop.id}">${count}</td>`;
+          tabla.appendChild(fila);
+        }
+      }
+    }
+
+    function actualizarConteo(stopId, count) {
+      const celda = document.getElementById(`count-${stopId}`);
+      if (celda) celda.textContent = count;
+    }
+
+    cargarRutas().then(() => {
+      const socket = io(SERVER_URL);
+      socket.on("connect", () => { status.textContent = "Conectado — actualizando en vivo"; });
+      socket.on("disconnect", () => { status.textContent = "Desconectado"; });
+      socket.on("demand:update", ({ stop_id, waiting_count }) => actualizarConteo(stop_id, waiting_count));
+    });
+  </script>
+</body>
+</html>

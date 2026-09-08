@@ -1,0 +1,27 @@
+{
+  "name": "maas-morelia-server",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc && cp src/db/schema.sql dist/db/schema.sql && cp src/data/seed-routes.json dist/data/seed-routes.json",
+    "start": "node dist/index.js",
+    "simulate": "tsx src/driver-sim.ts",
+    "test:smoke": "tsx scripts/smoke-test.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
