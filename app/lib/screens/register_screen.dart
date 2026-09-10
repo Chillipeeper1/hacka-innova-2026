@@ -84,12 +84,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return AuthFormScaffold(
       formKey: _formKey,
       title: 'Registrarse',
-      promptBuilder:
-          (width) => AuthPrompt.signIn(
-            width: width,
-            designSize: 12,
-            onTap: widget.onSignIn,
-          ),
+      promptBuilder: (width) => AuthPrompt.signIn(
+        width: width,
+        designSize: 12,
+        onTap: widget.onSignIn,
+      ),
       // El diseño dice "Entrar" en este botón, heredado de la pantalla inicial; en un
       // formulario de alta eso confunde.
       ctaLabel: 'Registrarse',
@@ -113,11 +112,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         textInputAction: TextInputAction.next,
         keyboardType: TextInputType.name,
         autofillHints: const [AutofillHints.name],
-        validator:
-            (value) =>
-                (value == null || value.trim().length < 3)
-                    ? 'Escribe tu nombre completo'
-                    : null,
+        validator: (value) => (value == null || value.trim().length < 3)
+            ? 'Escribe tu nombre completo'
+            : null,
       ),
       gap,
 
@@ -155,11 +152,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         controller: _password,
         textInputAction: TextInputAction.next,
         autofillHints: const [AutofillHints.newPassword],
-        validator:
-            (value) =>
-                (value == null || value.length < 8)
-                    ? 'Mínimo 8 caracteres'
-                    : null,
+        validator: (value) =>
+            (value == null || value.length < 8) ? 'Mínimo 8 caracteres' : null,
       ),
       gap,
 
@@ -169,9 +163,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         hint: '•••••••••••',
         controller: _confirm,
         textInputAction: TextInputAction.done,
-        validator:
-            (value) =>
-                value != _password.text ? 'Las contraseñas no coinciden' : null,
+        validator: (value) =>
+            value != _password.text ? 'Las contraseñas no coinciden' : null,
       ),
     ];
   }

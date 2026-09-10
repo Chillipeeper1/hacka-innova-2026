@@ -6,7 +6,25 @@
 /// sobre el grafo de paradas. El cliente no recalcula nada, solo lo enseña y lo recorre.
 library;
 
+import 'dart:math' as math;
+
 import 'package:latlong2/latlong.dart';
+
+import 'path_geometry.dart';
+
+/// A partir de cuánto un tramo a pie deja de ser un tramo y pasa a ser una caminata que nadie
+/// va a hacer.
+///
+/// El motor del servidor limita la bici a 6 km —"nadie pedalea distancias así para un viaje
+/// cotidiano", dice `server/src/lib/speeds.ts`— pero a caminar no le pone tope. El resultado es
+/// que todo lo que las rutas del seed no cubren vuelve como un tramo a pie de horas: un destino
+/// a 10 km al sur del centro devuelve 5 minutos en bici y 122 caminando, y sin esto se enseñaba
+/// como un itinerario cualquiera.
+///
+/// El número no es nuevo: es el mismo `maxWalkToBoardingMeters` con el que el flujo de camión
+/// ya descarta las opciones que obliguen a caminar de más. Que las dos partes de la app midan
+/// igual es justamente el punto.
+const double maxJourneyWalkMeters = 2500;
 
 /// Cómo se recorre un tramo.
 enum JourneyMode {
@@ -28,12 +46,35 @@ enum JourneyMode {
   /// es lo que une los demás tramos.
   static const List<JourneyMode> selectable = [bike, combi, bus, cableCar];
 
+  /// El nombre del servicio a secas, sin preposición: para etiquetas y chips.
+  ///
+  /// `label` dice "En combi" porque nombra un tramo del viaje; una etiqueta pegada a una parada
+  /// dice "Combi", que es lo que ahí se lee bien.
+  String get serviceLabel => switch (this) {
+    JourneyMode.walk => 'A pie',
+    JourneyMode.bike => 'Bici',
+    JourneyMode.bus => 'Camión',
+    JourneyMode.combi => 'Combi',
+    JourneyMode.cableCar => 'Teleférico',
+  };
+
   static JourneyMode fromWire(String value) => values.firstWhere(
     (mode) => mode.wireValue == value,
     // Un modo que esta versión de la app no conoce se enseña como caminata en vez de tirar la
     // pantalla: el viaje sigue siendo utilizable aunque el nombre del tramo quede pobre.
     orElse: () => JourneyMode.walk,
   );
+
+  /// Como [fromWire], pero sin inventar: `null` si el servidor manda un modo desconocido.
+  ///
+  /// Lo usa quien prefiere no enseñar nada a enseñar algo falso — una etiqueta que dijera
+  /// "A pie" sobre la parada de un camión sería peor que no tener etiqueta.
+  static JourneyMode? tryFromWire(String value) {
+    for (final mode in values) {
+      if (mode.wireValue == value) return mode;
+    }
+    return null;
+  }
 }
 
 /// Un extremo de tramo: puede ser una parada con nombre o un punto suelto.
@@ -65,6 +106,7 @@ class JourneyLeg {
     required this.minutes,
     this.routeId,
     this.routeName,
+    this.geometry = const [],
   });
 
   final JourneyMode mode;
@@ -75,6 +117,20 @@ class JourneyLeg {
 
   final int? routeId;
   final String? routeName;
+
+  /// Por dónde pasa el tramo, calle por calle, si el servidor lo trae.
+  ///
+  /// Puede venir vacío —OSRM no contestó, el tramo mide cero, o es el teleférico, que va por
+  /// el aire y ahí la recta es el trazado correcto—. En ese caso se cae a la recta entre
+  /// extremos, que es lo que se dibujaba antes.
+  ///
+  /// **No** mide [meters] ni [minutes]: esos siguen siendo los del motor, que elige con
+  /// distancias en línea recta. El trazado real es más largo que la recta que lo generó.
+  final List<LatLng> geometry;
+
+  /// Los puntos con los que dibujar y recorrer este tramo. Nunca vacío.
+  List<LatLng> get path =>
+      geometry.isNotEmpty ? geometry : [from.location, to.location];
 
   /// Ritmo real de este tramo, según el propio servidor.
   ///
@@ -93,6 +149,7 @@ class JourneyLeg {
     minutes: (json['eta_minutes'] as num).toDouble(),
     routeId: (json['route_id'] as num?)?.toInt(),
     routeName: json['route_name'] as String?,
+    geometry: latLngListFromJson(json['geometry']),
   );
 }
 
@@ -117,6 +174,18 @@ class Journey {
   /// Tramos que no son caminata: los que de verdad hay que tomar.
   int get rideCount => legs.where((leg) => leg.mode != JourneyMode.walk).length;
 
+  /// El tramo a pie más largo del viaje.
+  double get longestWalkMeters => legs
+      .where((leg) => leg.mode == JourneyMode.walk)
+      .fold(0, (worst, leg) => math.max(worst, leg.meters));
+
+  /// El destino queda fuera de lo que la red alcanza.
+  ///
+  /// Se mira el tramo más largo y no la suma: dos caminatas de conexión de un kilómetro cada
+  /// una son un viaje perfectamente normal, y una sola de nueve no lo es. Ver
+  /// [maxJourneyWalkMeters].
+  bool get beyondNetwork => longestWalkMeters > maxJourneyWalkMeters;
+
   /// Modos distintos que usa, en orden y sin repetir. Es el resumen de un vistazo.
   List<JourneyMode> get modes {
     final seen = <JourneyMode>[];
@@ -127,10 +196,13 @@ class Journey {
   }
 
   /// Todos los puntos del viaje, de principio a fin.
+  ///
+  /// Sigue el trazado real cuando lo hay: es lo que encuadra el mapa, y una ruta que se
+  /// desvía puede salirse del rectángulo que forman los extremos de sus tramos.
   List<LatLng> get points {
     final all = <LatLng>[];
     for (final leg in legs) {
-      for (final point in [leg.from.location, leg.to.location]) {
+      for (final point in leg.path) {
         if (all.isEmpty || all.last != point) all.add(point);
       }
     }

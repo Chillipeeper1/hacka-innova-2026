@@ -171,4 +171,52 @@ void main() {
       findsOneWidget,
     );
   });
+
+  group('etiqueta de servicio', () {
+    testWidgets('distingue una combi de un camión', (tester) async {
+      final container = await containerConDestino();
+      await pump(tester, container);
+
+      // El seed tiene la ruta 1 como combi y la 2 como camión, y para este destino la app
+      // ofrece paradas de las dos. Lo que se prueba no es que haya etiqueta, sino que
+      // **distinga**: sin esto las dos paradas se ven idénticas y no hay cómo saber qué llega.
+      final options = container.read(tripPlanProvider).options;
+      expect(
+        options.map((o) => o.route.mode).toSet(),
+        containsAll(['combi', 'bus']),
+      );
+
+      expect(find.text('Combi'), findsWidgets);
+      expect(find.text('Camión'), findsWidgets);
+    });
+
+    testWidgets('la etiqueta usa el color de su ruta', (tester) async {
+      final container = await containerConDestino();
+      await pump(tester, container);
+
+      final badges = tester.widgetList<ServiceBadge>(find.byType(ServiceBadge));
+      expect(badges, isNotEmpty);
+      // Cada etiqueta lleva el color de la ruta a la que pertenece, no uno genérico.
+      final combi = badges.firstWhere((b) => b.mode == 'combi');
+      final bus = badges.firstWhere((b) => b.mode == 'bus');
+      expect(combi.color, isNot(bus.color));
+    });
+
+    testWidgets('un modo desconocido no inventa etiqueta', (tester) async {
+      // `JourneyMode.fromWire` cae a "a pie" ante un modo que no conoce, y eso pegado a la
+      // parada de un camión sería peor que no poner nada.
+      final container = await containerConDestino(
+        api: FakeApi(
+          routesJson: routesPayload.replaceFirst(
+            '"mode":"combi"',
+            '"mode":"tranvia"',
+          ),
+        ),
+      );
+      await pump(tester, container);
+
+      expect(find.text('A pie'), findsNothing);
+      expect(find.text('Camión'), findsWidgets);
+    });
+  });
 }

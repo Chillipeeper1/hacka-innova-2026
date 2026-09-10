@@ -3,10 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/models.dart';
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
+import '../widgets/panic_button.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Esperar la unidad en la parada y subirse.
@@ -159,9 +161,13 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
                     width: width,
                     onMenu: widget.onMenu,
                     onProfile: widget.onProfile,
-                    trailing: MapInfoCard(
+                    // Esperar parado en una parada de noche es parte del viaje, y de las que
+                    // más se siente. El botón está desde aquí, no desde que sube.
+                    panic: PanicButton(
                       width: width,
-                      lines: ['Esperas en:', option.boardingStop.name],
+                      trip:
+                          'Esperando ${option.route.name} en '
+                          '${option.boardingStop.name}',
                     ),
                   ),
                   Align(
@@ -179,9 +185,11 @@ class _BoardBusScreenState extends ConsumerState<BoardBusScreen> {
                         : _WaitingSheet(
                             width: width,
                             maxHeight: constraints.maxHeight,
-                            minutesToStop: metersToStop == null
+                            stopName: option.boardingStop.name,
+                            route: option.route,
+                            etaToStop: metersToStop == null
                                 ? null
-                                : minutesForMeters(metersToStop),
+                                : etaMinutesForMeters(metersToStop),
                             onCancel: widget.onCancel,
                           ),
                   ),
@@ -200,16 +208,25 @@ class _WaitingSheet extends StatelessWidget {
   const _WaitingSheet({
     required this.width,
     required this.maxHeight,
-    required this.minutesToStop,
+    required this.stopName,
+    required this.route,
+    required this.etaToStop,
     this.onCancel,
   });
 
   final double width;
   final double maxHeight;
 
+  /// En qué parada se espera.
+  final String stopName;
+
+  /// Qué servicio pasa por ahí. Es lo que decide si lo que viene es un camión o una combi.
+  final TransitRoute route;
+
   /// Cuánto falta para que llegue la unidad. Se muestra en minutos: los metros no le dicen
   /// nada a quien espera parado en la banqueta.
-  final int? minutesToStop;
+  /// Minutos que faltan para que llegue la unidad. `null` mientras no se conoce su posición.
+  final double? etaToStop;
 
   final VoidCallback? onCancel;
 
@@ -220,7 +237,7 @@ class _WaitingSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.4,
+      maxHeightFactor: 0.48,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,13 +258,24 @@ class _WaitingSheet extends StatelessWidget {
             width: width,
             // Sin posición de la unidad no hay distancia que mostrar, y eso es lo normal
             // antes de que el conductor arranque.
-            label: minutesToStop == null
+            label: etaToStop == null
                 ? 'La unidad aún no reporta posición'
-                : 'La unidad llega en $minutesToStop min',
-            background: minutesToStop == null
+                : 'La unidad llega en ${formatEta(etaToStop!)}',
+            background: etaToStop == null
                 ? AppColors.fieldStrong
                 : AppColors.magenta,
-            foreground: minutesToStop == null ? Colors.black : Colors.white,
+            foreground: etaToStop == null ? Colors.black : Colors.white,
+          ),
+          SizedBox(height: 14 * s),
+          TripDestinationLine.named(
+            width: width,
+            label: 'Esperas en',
+            name: stopName,
+            badge: ServiceBadge(
+              width: width,
+              mode: route.mode,
+              color: colorFromHex(route.colorHex),
+            ),
           ),
           SizedBox(height: 14 * s),
           Text(

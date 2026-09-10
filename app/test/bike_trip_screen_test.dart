@@ -4,8 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/bike_trip.dart';
 import 'package:maas_morelia/widgets/app_map.dart';
+import 'package:maas_morelia/widgets/trip_widgets.dart';
 import 'package:maas_morelia/screens/bike_trip_screen.dart';
+import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/theme.dart';
+
+import 'support/fakes.dart';
 
 /// La pantalla del viaje en bici.
 ///
@@ -22,7 +26,16 @@ void main() {
 
   late ProviderContainer container;
 
-  setUp(() => container = ProviderContainer());
+  // Con API falsa: el ajuste a calles sale a la red, y una prueba no puede depender de
+  // que el servidor esté levantado.
+  setUp(
+    () => container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(FakeApi().build()),
+        reverseGeocoderProvider.overrideWithValue(FakeGeocoder()),
+      ],
+    ),
+  );
 
   /// Apaga el timer del ciclista simulado.
   ///
@@ -193,6 +206,27 @@ void main() {
     await tester.tap(find.text('Terminar'));
     await tester.pump();
     expect(finished, isTrue);
+  });
+
+  testWidgets('el destino se lee en la hoja, no en una tarjeta sobre el mapa', (
+    tester,
+  ) async {
+    await pumpAt(tester, const Size(402, 874));
+    expectNoLayoutError(tester, 'destino');
+    await tester.pump();
+
+    // Con dirección de calle, no con las coordenadas del punto.
+    expect(find.text('Vas hacia'), findsOneWidget);
+    expect(find.text('Calle Antonio Alzate 805, Morelia'), findsOneWidget);
+
+    // Y dentro de la hoja blanca: la tarjeta flotante que decía esto tapaba justo el tramo
+    // de mapa por el que se va a pasar.
+    final sheet = tester.getRect(find.byType(TripSheet));
+    final line = tester.getRect(find.text('Vas hacia'));
+    expect(sheet.contains(line.topLeft), isTrue);
+    expect(sheet.contains(line.bottomRight), isTrue);
+
+    stopRiding();
   });
 
   testWidgets('se puede abandonar el viaje a medias', (tester) async {

@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// La clave de Google Maps vive en app/.env, fuera de git (ver README). El manifest sí está en
+// git, así que no puede llevarla escrita: se lee aquí y se inyecta como manifestPlaceholder.
+// Sin clave el mapa sale en blanco y el resto de la app sigue funcionando, igual que en web.
+val mapsApiKey: String = file("../../.env").takeIf { it.exists() }
+    ?.readLines()
+    ?.firstOrNull { it.trimStart().startsWith("GOOGLE_MAPS_API_KEY=") }
+    ?.substringAfter('=')
+    ?.trim()
+    ?.trim('"', '\'')
+    ?: ""
+
 android {
     namespace = "mx.maasmorelia.maas_morelia"
     compileSdk = flutter.compileSdkVersion
@@ -27,6 +38,7 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     buildTypes {

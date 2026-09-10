@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'models.dart';
+import 'path_geometry.dart';
 import 'providers.dart';
 
 const Distance _distance = Distance();
@@ -66,20 +67,44 @@ const double alightingRadiusMeters = 60;
 /// Tarjeta de movilidad del usuario demo, sembrada por el backend.
 const String demoCardUid = 'DEMO-0001';
 
-/// Velocidad promedio con la que se convierte distancia en tiempo.
+/// Velocidad promedio de un camión de verdad, puerta a puerta.
 ///
-/// Es la misma que usa el servidor en `GET /stops/:id/eta` (`AVERAGE_SPEED_KMH` en
-/// `server/src/routes/stops.ts`). Repetirla aquí evita que la app diga "5 min" mientras el
-/// servidor dice "8" para el mismo trayecto — si allá se ajusta, aquí también.
+/// Es la que usa el motor de recomendación del servidor (`speedForMode` en
+/// `server/src/lib/speeds.ts`) para decir cuánto dura un viaje, y con la que se compara la
+/// bici en `bike_network.dart`. **No** es con la que se cuenta lo que falta para que llegue la
+/// unidad en la demo — para eso está [etaSpeedKmh].
 const double averageBusSpeedKmh = 15;
 
-/// Minutos que faltan para recorrer [meters] a velocidad de camión.
+/// Velocidad con la que se cuenta lo que falta para que llegue la unidad.
 ///
-/// Nunca devuelve cero: "llega en 0 min" se lee como "ya se fue". Por debajo del minuto se
-/// muestra como 1.
-int minutesForMeters(double meters) {
-  final minutes = meters / (averageBusSpeedKmh * 1000 / 60);
-  return math.max(1, minutes.round());
+/// La del conductor simulado (`SPEED_KMH` en `server/scripts/demo-drive.ts`, 600 km/h), no la
+/// de un camión de verdad. No es un error de unidades: la unidad de la demo cruza los 613 m
+/// entre la Catedral y las Tarascas en cuatro segundos, y un contador que anunciara los dos
+/// minutos y medio que tardaría un camión real estaría desmintiendo a la unidad que se ve
+/// llegar en el mapa.
+///
+/// Es la misma que usa el servidor en `GET /stops/:id/eta` (`DEMO_VEHICLE_SPEED_KMH` en
+/// `server/src/lib/speeds.ts`); repetirla aquí evita que la app diga una cosa y el servidor
+/// otra para el mismo trayecto. Si allá se cambia, aquí también — o de una vez con
+/// `--dart-define=ETA_SPEED_KMH=15`, que devuelve el tiempo de un camión real.
+///
+/// Los minutos del **itinerario** no pasan por aquí: los calcula el servidor con la velocidad
+/// de verdad y siguen siendo los de un camión, que es lo que el producto promete.
+const int etaSpeedKmh = int.fromEnvironment('ETA_SPEED_KMH', defaultValue: 600);
+
+/// Minutos que faltan para recorrer [meters] a la velocidad de la demo.
+double etaMinutesForMeters(double meters) => meters / (etaSpeedKmh * 1000 / 60);
+
+/// Cuánto falta, como se lee en pantalla: `"12 s"` abajo del minuto, `"3 min"` a partir de ahí.
+///
+/// Los segundos no son un adorno de la demo: con la unidad corriendo comprimida, a la parada le
+/// faltan segundos casi siempre, y redondear todo a "1 min" deja el contador clavado en el
+/// mismo número hasta que la unidad aparece. Nunca dice cero — "llega en 0" se lee como que ya
+/// se fue.
+String formatEta(double minutes) {
+  final seconds = (minutes * 60).round();
+  if (seconds < 60) return '${math.max(1, seconds)} s';
+  return '${(seconds / 60).round()} min';
 }
 
 /// Una forma de llegar al destino: dónde subirse, por qué ruta y dónde bajarse.
@@ -109,7 +134,8 @@ class BoardingOption {
   bool get isBusy => waitingCount >= busyStopThreshold;
 
   /// Deja al usuario prácticamente en su destino.
-  bool get dropsClose => metersFromAlightingToDestination <= goodAlightingMeters;
+  bool get dropsClose =>
+      metersFromAlightingToDestination <= goodAlightingMeters;
 
   /// Criterio de orden.
   ///
@@ -163,6 +189,7 @@ class TripPlan {
     this.chosen,
     this.boardingSignalId,
     this.paymentMethod,
+    this.walkPath = const [],
   });
 
   final TripStage stage;
@@ -182,6 +209,12 @@ class TripPlan {
   /// Cómo pagó, una vez a bordo.
   final PaymentMethod? paymentMethod;
 
+  /// Por dónde se camina hasta la parada, calle por calle.
+  ///
+  /// Vacío mientras el servidor no lo ha dado, o si no lo tiene: entonces se dibuja —y se
+  /// camina— la recta hasta la parada, que es lo que hacía antes.
+  final List<LatLng> walkPath;
+
   bool get hasDestination => destination != null;
 
   /// Hay destino pero ninguna ruta del catálogo lo acerca lo suficiente.
@@ -194,6 +227,7 @@ class TripPlan {
     BoardingOption? chosen,
     int? boardingSignalId,
     PaymentMethod? paymentMethod,
+    List<LatLng>? walkPath,
   }) => TripPlan(
     stage: stage ?? this.stage,
     destination: destination ?? this.destination,
@@ -201,6 +235,7 @@ class TripPlan {
     chosen: chosen ?? this.chosen,
     boardingSignalId: boardingSignalId ?? this.boardingSignalId,
     paymentMethod: paymentMethod ?? this.paymentMethod,
+    walkPath: walkPath ?? this.walkPath,
   );
 }
 
@@ -234,10 +269,33 @@ class TripPlanController extends Notifier<TripPlan> {
   }
 
   /// Paso 3: confirma la opción y empieza a caminar.
-  void startWalking() {
-    if (state.chosen == null) return;
-    state = state.copyWith(stage: TripStage.walking);
-    ref.read(userLocationProvider.notifier).walkTo(state.chosen!.boardingStop.location);
+  /// Paso 3: a caminar hacia la parada.
+  ///
+  /// Arranca en recta y pide el trazado por calles en paralelo: esperar a la red antes de
+  /// mover al pasajero dejaría la pantalla congelada por una línea más bonita. Cuando llega,
+  /// se recoloca sobre el trazado. Si no llega, se sigue caminando recto, como antes.
+  Future<void> startWalking() async {
+    final chosen = state.chosen;
+    if (chosen == null) return;
+
+    final stop = chosen.boardingStop.location;
+    final from = ref.read(userLocationProvider);
+    state = state.copyWith(stage: TripStage.walking, walkPath: const []);
+    ref.read(userLocationProvider.notifier).walkTo(stop);
+
+    try {
+      final path = await ref
+          .read(apiClientProvider)
+          .fetchWalkPath(from: from, to: stop);
+      if (path.length < 2) return;
+      // Pudo cancelarse o abordar mientras la petición volaba.
+      if (state.stage != TripStage.walking) return;
+
+      state = state.copyWith(walkPath: path);
+      ref.read(userLocationProvider.notifier).walkTo(stop, path: path);
+    } catch (_) {
+      // Sin trazado se camina en recta. No es motivo para romper el viaje.
+    }
   }
 
   /// Paso 4: confirmó que abordará aquí. Se queda en la parada esperando la unidad.
@@ -341,10 +399,7 @@ List<BoardingOption> buildOptions({
   for (final option in options) {
     final alreadyThere = deduped.any(
       (kept) =>
-          _distance(
-            kept.boardingStop.location,
-            option.boardingStop.location,
-          ) <=
+          _distance(kept.boardingStop.location, option.boardingStop.location) <=
           samePlaceMeters,
     );
     if (!alreadyThere) deduped.add(option);
@@ -367,9 +422,20 @@ class UserLocationController extends Notifier<LatLng> {
   /// El conductor de la demo también es simulado (`server/npm run simulate`), así que simular
   /// al peatón mantiene la demostración coherente: se ve llegar a la parada y dispara la
   /// confirmación de abordaje sola.
-  void walkTo(LatLng target, {Duration step = const Duration(seconds: 1)}) {
+  ///
+  /// Con [path] sigue ese trazado —el que da el servidor por calles— en vez de ir en línea
+  /// recta. Importa que sea el mismo que se dibuja: un peatón que corta manzanas mientras su
+  /// propia línea rodea la cuadra se ve roto.
+  void walkTo(
+    LatLng target, {
+    List<LatLng> path = const [],
+    Duration step = const Duration(milliseconds: 500),
+  }) {
     _timer?.cancel();
     _target = target;
+    _path = path.length >= 2 ? path : const [];
+    _walkedMeters = 0;
+    _pathMeters = _path.isEmpty ? 0 : pathLengthMeters(_path);
     _timer = Timer.periodic(step, (_) => _advance());
     ref.onDispose(() => _timer?.cancel());
   }
@@ -379,15 +445,42 @@ class UserLocationController extends Notifier<LatLng> {
   void reset() {
     _timer?.cancel();
     _target = null;
+    _path = const [];
+    _walkedMeters = 0;
+    _pathMeters = 0;
     state = const LatLng(19.7008, -101.1844);
   }
 
   Timer? _timer;
   LatLng? _target;
+  List<LatLng> _path = const [];
+  double _walkedMeters = 0;
+  double _pathMeters = 0;
+
+  /// Cuánto lleva andado del trazado. Es lo que deja dibujar solo lo que falta.
+  double get walkedMeters => _walkedMeters;
 
   void _advance() {
     final target = _target;
     if (target == null) return;
+
+    // 25 m por tick de medio segundo. No es paso humano —caminar normal es 1.4 m/s— sino el
+    // mismo tipo de aceleración que usan los otros modos con su `DemoSpeedFactor`: nadie
+    // espera doce minutos a que el peatón de la demo llegue a la parada. Los minutos que la
+    // pantalla estima sí salen de la velocidad real.
+    const pathStepMeters = 25.0;
+
+    if (_path.isNotEmpty) {
+      _walkedMeters += pathStepMeters;
+      if (_walkedMeters >= _pathMeters) {
+        _walkedMeters = _pathMeters;
+        state = target;
+        _timer?.cancel();
+        return;
+      }
+      state = pointAlongPath(_path, _walkedMeters);
+      return;
+    }
 
     final remaining = _distance(state, target);
     if (remaining <= arrivalRadiusMeters * 0.5) {
@@ -396,7 +489,7 @@ class UserLocationController extends Notifier<LatLng> {
       return;
     }
 
-    // ~1.4 m/s, que es caminar normal.
+    // Mismo paso acelerado que arriba, cuando no hay trazado que seguir.
     const stepMeters = 25.0;
     final fraction = (stepMeters / remaining).clamp(0.0, 1.0);
     state = LatLng(
@@ -472,10 +565,9 @@ class BusVisitedStopController extends Notifier<bool> {
   }
 }
 
-final busVisitedStopProvider =
-    NotifierProvider<BusVisitedStopController, bool>(
-      BusVisitedStopController.new,
-    );
+final busVisitedStopProvider = NotifierProvider<BusVisitedStopController, bool>(
+  BusVisitedStopController.new,
+);
 
 /// La unidad ya se fue de la parada.
 ///

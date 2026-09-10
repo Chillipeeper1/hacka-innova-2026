@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maas_morelia/screens/login_screen.dart';
 import 'package:maas_morelia/theme.dart';
+import 'package:maas_morelia/widgets/branding.dart';
 
 /// Verifica que la pantalla inicial aguante los tamaños reales en los que va a correr.
 ///
@@ -50,9 +51,13 @@ void main() {
         await pumpAt(tester, size);
 
         // Un RenderFlex desbordado se reporta como excepción: si la hay, el layout rompió.
-        expect(tester.takeException(), isNull, reason: 'desbordamiento en $name');
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'desbordamiento en $name',
+        );
 
-        expect(find.text('MTAPP'), findsOneWidget);
+        expect(find.byType(MtappLogo), findsOneWidget);
         expect(find.text('Entrar'), findsOneWidget);
         expect(find.text('Sigue tu camión en tiempo real'), findsOneWidget);
       });
@@ -88,10 +93,7 @@ void main() {
   ) async {
     await pumpAt(tester, const Size(402, 874));
 
-    expect(
-      find.bySemanticsLabel('Continuar con Google'),
-      findsOneWidget,
-    );
+    expect(find.bySemanticsLabel('Continuar con Google'), findsOneWidget);
     expect(find.bySemanticsLabel('Continuar con Apple'), findsOneWidget);
   });
 }

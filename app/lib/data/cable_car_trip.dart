@@ -23,10 +23,11 @@ const double cableCarArrivalMeters = 15;
 /// Uno solo para los dos modos: si la caminata y la cabina se aceleraran distinto, la demo
 /// mentiría sobre cuál es más rápido. **Solo afecta la simulación**; el tiempo estimado en
 /// pantalla se calcula con las velocidades reales.
-const int cableCarDemoSpeedFactor = 10;
+const int cableCarDemoSpeedFactor = 20;
 
-/// Cada cuánto avanza el viaje simulado.
-const Duration cableCarTick = Duration(milliseconds: 500);
+/// Cada cuánto avanza el viaje simulado. Acompaña al factor de arriba: al doblar la velocidad
+/// se parte el tick a la mitad, así cada paso mide lo mismo en el mapa.
+const Duration cableCarTick = Duration(milliseconds: 250);
 
 enum CableStage {
   /// Sin viaje.

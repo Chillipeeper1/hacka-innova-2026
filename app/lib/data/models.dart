@@ -7,6 +7,7 @@ library;
 
 import 'package:latlong2/latlong.dart';
 
+import 'path_geometry.dart';
 
 /// Ruta de transporte con sus paradas.
 class TransitRoute {
@@ -16,6 +17,7 @@ class TransitRoute {
     required this.mode,
     required this.colorHex,
     required this.stops,
+    this.roadShape = const [],
   });
 
   final int id;
@@ -27,21 +29,30 @@ class TransitRoute {
   final String colorHex;
   final List<Stop> stops;
 
-  /// Trazado de la ruta: las paradas en orden de secuencia.
+  /// Por dónde va la ruta calle por calle, si el servidor lo trae (`shape`).
   ///
-  /// El mockup no tiene geometría real de calles — el documento base la deja para cuando haya
-  /// motor de ruteo — así que la línea une paradas consecutivas.
-  List<LatLng> get shape => stops.map((stop) => stop.location).toList();
+  /// Puede venir vacío: sin OSRM, o el teleférico, que va por el aire y ahí unir estaciones
+  /// con una recta es el trazado correcto.
+  final List<LatLng> roadShape;
+
+  /// Trazado de la ruta para dibujarla.
+  ///
+  /// El trazado por calles cuando lo hay; si no, las paradas en orden de secuencia, que es lo
+  /// que se dibujaba antes de que el backend supiera pedirle la geometría a OSRM: recto entre
+  /// parada y parada, cruzando manzanas por donde el camión no pasa.
+  List<LatLng> get shape => roadShape.isNotEmpty
+      ? roadShape
+      : stops.map((stop) => stop.location).toList();
 
   factory TransitRoute.fromJson(Map<String, dynamic> json) => TransitRoute(
     id: json['id'] as int,
     name: json['name'] as String,
     mode: json['mode'] as String,
     colorHex: json['color_hex'] as String? ?? '#0E5E56',
-    stops:
-        (json['stops'] as List<dynamic>? ?? const [])
-            .map((e) => Stop.fromJson(e as Map<String, dynamic>))
-            .toList(),
+    stops: (json['stops'] as List<dynamic>? ?? const [])
+        .map((e) => Stop.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    roadShape: latLngListFromJson(json['shape']),
   );
 }
 

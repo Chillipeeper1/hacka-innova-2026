@@ -2,14 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../data/bike_network.dart';
 import '../data/bike_trip.dart';
+import '../data/nearby_ads.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
+import '../widgets/panic_button.dart';
+import '../widgets/sponsored_places.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Viaje en bici, de punta a punta en una sola pantalla.
@@ -49,8 +51,6 @@ class BikeTripScreen extends ConsumerWidget {
       );
     }
 
-    final arrived = trip.stage == BikeStage.arrived;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -66,13 +66,11 @@ class BikeTripScreen extends ConsumerWidget {
                     width: width,
                     onMenu: onMenu,
                     onProfile: onProfile,
-                    trailing: MapInfoCard(
+                    // Sin ruta ni unidad que nombrar: en bici lo que ubica es la posición,
+                    // que la alerta manda siempre.
+                    panic: PanicButton(
                       width: width,
-                      asset: 'assets/icons/bicycle.svg',
-                      lines: [
-                        arrived ? 'Llegaste a:' : 'Vas hacia:',
-                        _formatPoint(trip.destination),
-                      ],
+                      trip: 'En bici, rumbo a su destino',
                     ),
                   ),
                   Align(
@@ -96,12 +94,6 @@ class BikeTripScreen extends ConsumerWidget {
   }
 }
 
-String _formatPoint(LatLng? point) {
-  if (point == null) return 'tu destino';
-  return '${point.latitude.toStringAsFixed(5)}, '
-      '${point.longitude.toStringAsFixed(5)}';
-}
-
 /// Mapa con el recorrido, la etiqueta de la ciclovía y el ciclista.
 class _BikeMap extends StatelessWidget {
   const _BikeMap({required this.trip, required this.route});
@@ -113,6 +105,7 @@ class _BikeMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final rider = trip.position;
     final laneAnchor = route.laneLabelAnchor;
+    final arrived = trip.stage == BikeStage.arrived;
 
     return AppMap(
       initialCenter: rider ?? Morelia.center,
@@ -147,6 +140,9 @@ class _BikeMap extends StatelessWidget {
             icon: const SvgMapIcon('assets/icons/flag.svg'),
             semanticLabel: 'Tu destino',
           ),
+        // Al llegar, y solo al llegar: mientras el viaje sigue el mapa es para llegar.
+        if (arrived && trip.destination != null)
+          ...sponsoredMarkers(context, adsAround(trip.destination!)),
         if (rider != null)
           MapMarker(
             id: 'ciclista',
@@ -188,7 +184,7 @@ class _BikeSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.46,
+      maxHeightFactor: 0.54,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -212,7 +208,16 @@ class _BikeSheet extends StatelessWidget {
                 : 'Tiempo estimado: ${trip.remainingMinutes} min',
             background: arrived ? AppColors.green : AppColors.magenta,
           ),
-          SizedBox(height: 12 * s),
+          SizedBox(height: 14 * s),
+          if (trip.destination case final destination?) ...[
+            TripDestinationLine.at(
+              width: width,
+              label: arrived ? 'Llegaste a' : 'Vas hacia',
+              point: destination,
+              asset: 'assets/icons/bicycle.svg',
+            ),
+            SizedBox(height: 14 * s),
+          ],
           _RouteSummary(width: width, route: route),
           SizedBox(height: 16 * s),
           if (arrived)

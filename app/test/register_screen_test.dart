@@ -54,7 +54,11 @@ void main() {
       testWidgets(name, (tester) async {
         await pumpAt(tester, size);
 
-        expect(tester.takeException(), isNull, reason: 'desbordamiento en $name');
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'desbordamiento en $name',
+        );
         expect(find.text('Registrarse'), findsWidgets);
       });
     });
@@ -81,11 +85,7 @@ void main() {
 
   testWidgets('no envía con el formulario vacío', (tester) async {
     var submissions = 0;
-    await pumpAt(
-      tester,
-      const Size(402, 874),
-      onSubmit: (_) => submissions++,
-    );
+    await pumpAt(tester, const Size(402, 874), onSubmit: (_) => submissions++);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Registrarse'));
     await tester.pumpAndSettle();
@@ -140,11 +140,9 @@ void main() {
     await pumpAt(tester, const Size(402, 1400));
 
     final passwordField = find.byType(PillPasswordField).first;
-    EditableText editable() =>
-        tester.widget<EditableText>(find.descendant(
-          of: passwordField,
-          matching: find.byType(EditableText),
-        ));
+    EditableText editable() => tester.widget<EditableText>(
+      find.descendant(of: passwordField, matching: find.byType(EditableText)),
+    );
 
     expect(editable().obscureText, isTrue);
 

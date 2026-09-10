@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models.dart';
+import '../data/path_geometry.dart';
 import '../data/trip_plan.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
+import '../widgets/panic_button.dart';
 import '../widgets/trip_widgets.dart';
 
 /// "En viaje": el pasajero va a bordo.
@@ -60,9 +62,7 @@ class OnboardTripScreen extends ConsumerWidget {
       });
     });
 
-    final minutesLeft = metersLeft == null
-        ? null
-        : minutesForMeters(metersLeft);
+    final etaLeft = metersLeft == null ? null : etaMinutesForMeters(metersLeft);
 
     return Scaffold(
       body: Stack(
@@ -80,31 +80,30 @@ class OnboardTripScreen extends ConsumerWidget {
                     width: width,
                     onMenu: onMenu,
                     onProfile: onProfile,
-                    trailing: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        MapInfoCard(
-                          width: width,
-                          lines: ['Vas hacia:', option.alightingStop.name],
-                        ),
-                        if (nearAlighting) ...[
-                          SizedBox(height: 12 * s),
-                          _AlightingWarning(
+                    // Ruta y parada de bajada: es lo que hace útil una alerta desde adentro
+                    // de una unidad —a quién le llega necesita saber en cuál buscar.
+                    panic: PanicButton(
+                      width: width,
+                      trip:
+                          'A bordo de ${option.route.name}, hacia '
+                          '${option.alightingStop.name}',
+                    ),
+                    // El aviso de bajada sí se queda flotando: es lo único de esta pantalla
+                    // que hay que ver sin buscarlo, porque llega tarde si hay que leerlo.
+                    trailing: nearAlighting
+                        ? _AlightingWarning(
                             width: width,
                             stopName: option.alightingStop.name,
-                            minutes: minutesLeft,
-                          ),
-                        ],
-                      ],
-                    ),
+                            eta: etaLeft,
+                          )
+                        : null,
                   ),
                   Align(
                     alignment: Alignment.bottomCenter,
                     child: TripSheet(
                       width: width,
                       maxHeight: constraints.maxHeight,
-                      maxHeightFactor: 0.42,
+                      maxHeightFactor: 0.5,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -128,17 +127,23 @@ class OnboardTripScreen extends ConsumerWidget {
                           SizedBox(height: 16 * s),
                           InfoPill(
                             width: width,
-                            label: minutesLeft == null
+                            label: etaLeft == null
                                 ? 'Calculando lo que falta...'
-                                : 'Llegada estimada: $minutesLeft min',
-                            background: minutesLeft == null
+                                : 'Llegada estimada: ${formatEta(etaLeft)}',
+                            background: etaLeft == null
                                 ? AppColors.fieldStrong
                                 : AppColors.magenta,
-                            foreground: minutesLeft == null
+                            foreground: etaLeft == null
                                 ? Colors.black
                                 : Colors.white,
                           ),
-                          SizedBox(height: 10 * s),
+                          SizedBox(height: 14 * s),
+                          TripDestinationLine.named(
+                            width: width,
+                            label: 'Vas hacia',
+                            name: option.alightingStop.name,
+                          ),
+                          SizedBox(height: 12 * s),
                           Text(
                             plan.paymentMethod == PaymentMethod.card
                                 ? 'Pagaste con tarjeta · ${option.route.name}'
@@ -180,12 +185,14 @@ class _AlightingWarning extends StatelessWidget {
   const _AlightingWarning({
     required this.width,
     required this.stopName,
-    required this.minutes,
+    required this.eta,
   });
 
   final double width;
   final String stopName;
-  final int? minutes;
+
+  /// Minutos que faltan para la parada de bajada, si se conocen.
+  final double? eta;
 
   @override
   Widget build(BuildContext context) {
@@ -231,9 +238,9 @@ class _AlightingWarning extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      minutes == null
+                      eta == null
                           ? stopName
-                          : '$stopName · en $minutes min',
+                          : '$stopName · en ${formatEta(eta!)}',
                       style: TextStyle(
                         fontSize: fluid(
                           width,
@@ -276,10 +283,18 @@ class _OnboardMap extends StatelessWidget {
           color: routeColor.withValues(alpha: 0.7),
         ),
         // El tramo ya recorrido, en el azul del diseño.
+        //
+        // Sobre el trazado de la ruta y no en recta de la parada a la unidad: la línea de la
+        // ruta sigue las calles, así que una recta se despega de ella y cruza manzanas por su
+        // cuenta — hasta un kilómetro en la ruta a Charo, que es la que más rodea.
         if (vehicle != null)
           MapLine(
             id: 'recorrido',
-            points: [option.boardingStop.location, vehicle!.location],
+            points: pathBetween(
+              option.route.shape,
+              option.boardingStop.location,
+              vehicle!.location,
+            ),
             color: AppColors.walkPath,
             width: 8,
           ),

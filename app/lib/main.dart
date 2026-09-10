@@ -7,6 +7,7 @@ import 'data/cable_car_trip.dart';
 import 'data/journey_trip.dart';
 import 'data/trip_plan.dart';
 import 'data/walk_trip.dart';
+import 'screens/plus_screen.dart';
 import 'screens/confirm_stop_screen.dart';
 import 'screens/destination_screen.dart';
 import 'screens/home_screen.dart';
@@ -14,6 +15,7 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/stop_picker_screen.dart';
+import 'screens/travel_modes_screen.dart';
 import 'screens/bike_trip_screen.dart';
 import 'screens/cable_car_trip_screen.dart';
 import 'screens/journey_screen.dart';
@@ -52,6 +54,7 @@ class MtappApp extends StatelessWidget {
         AppRoutes.register: (context) => const _RegisterRoute(),
         AppRoutes.signIn: (context) => const _SignInRoute(),
         AppRoutes.home: (context) => const _HomeRoute(),
+        AppRoutes.plus: (context) => const _PlusRoute(),
         AppRoutes.destination: (context) => const _DestinationRoute(),
         AppRoutes.stopPicker: (context) => const _StopPickerRoute(),
         AppRoutes.confirmStop: (context) => const _ConfirmStopRoute(),
@@ -67,9 +70,10 @@ class MtappApp extends StatelessWidget {
         AppRoutes.cableCarDestination: (context) =>
             const _CableCarDestinationRoute(),
         AppRoutes.cableCarTrip: (context) => const _CableCarTripRoute(),
-        AppRoutes.fastestDestination: (context) =>
-            const _FastestDestinationRoute(),
-        AppRoutes.fastestTrip: (context) => const _FastestTripRoute(),
+        AppRoutes.customModes: (context) => const _CustomModesRoute(),
+        AppRoutes.customDestination: (context) =>
+            const _CustomDestinationRoute(),
+        AppRoutes.customTrip: (context) => const _CustomTripRoute(),
       },
     );
   }
@@ -83,6 +87,10 @@ class AppRoutes {
   static const String register = '/registro';
   static const String signIn = '/entrar';
   static const String home = '/inicio';
+
+  /// MTAPP Plus: agenda, guardianes y caja negra en una sola pantalla. Cuelga del inicio y no
+  /// de un flujo de viaje — no lleva a ningún lado, se consulta y se regresa.
+  static const String plus = '/plus';
   static const String destination = '/destino';
   static const String stopPicker = '/paradas';
   static const String confirmStop = '/confirmar-parada';
@@ -104,10 +112,14 @@ class AppRoutes {
   static const String cableCarDestination = '/destino-telef';
   static const String cableCarTrip = '/en-telef';
 
-  /// El viaje más rápido: el único que combina modos, y el único cuyo itinerario lo arma el
-  /// servidor en vez del cliente.
-  static const String fastestDestination = '/destino-rapido';
-  static const String fastestTrip = '/mas-rapido';
+  /// El viaje personalizado: el único donde el usuario elige los medios, y el único cuyo
+  /// itinerario lo arma el servidor en vez del cliente.
+  ///
+  /// Los medios van **primero**, antes del destino: son el filtro con el que se pide el
+  /// itinerario, y preguntarlos después obliga a armar uno con los cuatro y a corregirlo.
+  static const String customModes = '/medios-personalizado';
+  static const String customDestination = '/destino-personalizado';
+  static const String customTrip = '/viaje-personalizado';
 }
 
 /// Marcador para las acciones que todavía no llevan a ningún lado.
@@ -179,15 +191,16 @@ class _HomeRoute extends ConsumerWidget {
     return HomeScreen(
       onMenu: () => _pending(context, 'Menú'),
       onProfile: () => _pending(context, 'Perfil'),
-      // La tarjeta de arriba responde a "a dónde vas" con la mejor combinación de modos.
-      onFastestTrip: () {
-        ref.read(journeyTripProvider.notifier).reset();
-        Navigator.pushNamed(context, AppRoutes.fastestDestination);
-      },
-      onTravelByBus: () {
+      onSearchStop: () {
         // Cada viaje empieza de cero: si quedaba uno a medias, se descarta al pedir destino.
         ref.read(tripPlanProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.destination);
+      },
+      onPlus: () => Navigator.pushNamed(context, AppRoutes.plus),
+      onAd: () => _pending(context, 'Publicidad'),
+      onCustomTrip: () {
+        ref.read(journeyTripProvider.notifier).reset();
+        Navigator.pushNamed(context, AppRoutes.customModes);
       },
       onTravelByBike: () {
         ref.read(bikeTripProvider.notifier).reset();
@@ -201,6 +214,23 @@ class _HomeRoute extends ConsumerWidget {
         ref.read(cableCarTripProvider.notifier).reset();
         Navigator.pushNamed(context, AppRoutes.cableCarDestination);
       },
+    );
+  }
+}
+
+/// MTAPP Plus: todo lo que se paga, en una pantalla.
+///
+/// Se apila sobre el inicio en vez de reemplazarlo: no es un paso de ningún viaje, es una
+/// consulta de la que se regresa a lo que se estaba haciendo.
+class _PlusRoute extends StatelessWidget {
+  const _PlusRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return PlusScreen(
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onBack: () => Navigator.pop(context),
     );
   }
 }
@@ -449,9 +479,33 @@ class _CableCarTripRoute extends ConsumerWidget {
   }
 }
 
-/// Más rápido, paso 1: a dónde va.
-class _FastestDestinationRoute extends ConsumerWidget {
-  const _FastestDestinationRoute();
+/// Personalizado, paso 1: con qué se quiere mover.
+///
+/// Antes de esto no se le pide nada al servidor. Con `modes` en la mano, la primera respuesta
+/// ya es el viaje que el pasajero pidió y no uno que haya que corregir.
+class _CustomModesRoute extends ConsumerWidget {
+  const _CustomModesRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return TravelModesScreen(
+      initialModes: ref.read(journeyTripProvider).modes,
+      onMenu: () => _pending(context, 'Menú'),
+      onProfile: () => _pending(context, 'Perfil'),
+      onBack: () => Navigator.pop(context),
+      onConfirm: (modes) {
+        ref.read(journeyTripProvider.notifier).setModes(modes);
+        // Sin reemplazar: volver atrás desde el destino tiene que devolver a los medios, que
+        // es lo que se cambia cuando el viaje propuesto no sirve.
+        Navigator.pushNamed(context, AppRoutes.customDestination);
+      },
+    );
+  }
+}
+
+/// Personalizado, paso 2: a dónde va.
+class _CustomDestinationRoute extends ConsumerWidget {
+  const _CustomDestinationRoute();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -462,15 +516,15 @@ class _FastestDestinationRoute extends ConsumerWidget {
         // No se espera al servidor para navegar: la pantalla del viaje tiene su propio estado
         // de carga, y quedarse en la de destino sin señal de nada se siente a app colgada.
         ref.read(journeyTripProvider.notifier).start(destination);
-        Navigator.pushReplacementNamed(context, AppRoutes.fastestTrip);
+        Navigator.pushReplacementNamed(context, AppRoutes.customTrip);
       },
     );
   }
 }
 
-/// Más rápido, paso 2: el itinerario, que arma el servidor.
-class _FastestTripRoute extends ConsumerWidget {
-  const _FastestTripRoute();
+/// Personalizado, paso 3: el itinerario, que arma el servidor con los medios elegidos.
+class _CustomTripRoute extends ConsumerWidget {
+  const _CustomTripRoute();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

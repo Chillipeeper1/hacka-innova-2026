@@ -6,11 +6,13 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/models.dart';
+import '../data/path_geometry.dart';
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
 import '../data/walk_route.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
+import '../widgets/panic_button.dart';
 import '../widgets/stop_confirmation.dart';
 import '../widgets/trip_widgets.dart';
 
@@ -103,7 +105,7 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          _WalkMap(option: option, position: position),
+          _WalkMap(option: option, position: position, walkPath: plan.walkPath),
 
           if (arrived) const ColoredBox(color: AppColors.modalScrim),
 
@@ -118,12 +120,11 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
                     onMenu: widget.onMenu,
                     onProfile: widget.onProfile,
                     onBack: widget.onBack,
-                    trailing: MapInfoCard(
+                    panic: PanicButton(
                       width: width,
-                      lines: [
-                        arrived ? 'Vas hacia:' : 'Vas hacia la parada:',
-                        option.boardingStop.name,
-                      ],
+                      trip:
+                          'Caminando hacia la parada '
+                          '${option.boardingStop.name}',
                     ),
                   ),
 
@@ -144,6 +145,7 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
                             width: width,
                             maxHeight: constraints.maxHeight,
                             minutes: minutes,
+                            stopName: option.boardingStop.name,
                           ),
                   ),
 
@@ -177,10 +179,17 @@ class _WalkNavigationScreenState extends ConsumerState<WalkNavigationScreen> {
 
 /// Mapa con la caminata: origen, trazado y parada destino.
 class _WalkMap extends StatelessWidget {
-  const _WalkMap({required this.option, required this.position});
+  const _WalkMap({
+    required this.option,
+    required this.position,
+    required this.walkPath,
+  });
 
   final BoardingOption option;
   final LatLng position;
+
+  /// El trazado por calles hasta la parada. Vacío mientras el servidor no lo da.
+  final List<LatLng> walkPath;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +199,11 @@ class _WalkMap extends StatelessWidget {
       lines: [
         MapLine(
           id: 'caminata',
-          points: [position, option.boardingStop.location],
+          // Lo que falta por andar sobre el trazado por calles. Sin trazado —OSRM caído, o
+          // todavía en vuelo— queda la recta hasta la parada, que es lo que había antes.
+          points: walkPath.length >= 2
+              ? remainingPath(walkPath, position)
+              : [position, option.boardingStop.location],
           color: AppColors.walkPath,
           width: 8,
         ),
@@ -223,11 +236,15 @@ class _WalkSheet extends StatelessWidget {
     required this.width,
     required this.maxHeight,
     required this.minutes,
+    required this.stopName,
   });
 
   final double width;
   final double maxHeight;
   final int minutes;
+
+  /// A qué parada se va caminando.
+  final String stopName;
 
   @override
   Widget build(BuildContext context) {
@@ -236,13 +253,19 @@ class _WalkSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.35,
+      maxHeightFactor: 0.44,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InfoPill(width: width, label: 'Tiempo estimado: $minutes min'),
-          SizedBox(height: 18 * s),
+          SizedBox(height: 14 * s),
+          TripDestinationLine.named(
+            width: width,
+            label: 'Vas hacia la parada',
+            name: stopName,
+          ),
+          SizedBox(height: 14 * s),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

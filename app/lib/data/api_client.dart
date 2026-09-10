@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'journey.dart';
+import 'path_geometry.dart';
 import 'models.dart';
 
 /// Cliente REST de `server/`.
@@ -102,6 +103,34 @@ class ApiClient {
     return (body['alternatives'] as List<dynamic>)
         .map((json) => Journey.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// El trazado a pie por calles entre dos puntos.
+  ///
+  /// [via] son puntos por los que el camino tiene que pasar: los vértices de un rodeo que ya
+  /// esquiva una zona marcada, los extremos de una ciclovía. Sin ellos, ajustar a calles
+  /// deshace el desvío que costó calcular.
+  ///
+  /// Vacío cuando el servidor no lo tiene (sin OSRM): quien llama se queda con su trazado.
+  Future<List<LatLng>> fetchWalkPath({
+    required LatLng from,
+    required LatLng to,
+    List<LatLng> via = const [],
+  }) async {
+    final response = await _http.get(
+      Uri.parse('$baseUrl/walk-path').replace(
+        queryParameters: {
+          'from_lat': '${from.latitude}',
+          'from_lng': '${from.longitude}',
+          'to_lat': '${to.latitude}',
+          'to_lng': '${to.longitude}',
+          if (via.isNotEmpty)
+            'via': via.map((p) => '${p.latitude},${p.longitude}').join(';'),
+        },
+      ),
+    );
+    final body = _decodeMap(response, 'GET /walk-path');
+    return latLngListFromJson(body['path']);
   }
 
   /// Declara la intención del pasajero — el diferenciador del proyecto.

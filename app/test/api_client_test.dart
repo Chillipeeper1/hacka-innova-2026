@@ -23,14 +23,25 @@ void main() {
       expect(routes.first.stops.first.location.latitude, 19.7008);
     });
 
-    test('el trazado une las paradas en orden', () async {
+    test('el trazado sigue las calles cuando el servidor lo manda', () async {
+      // `shape` lo calcula el backend con OSRM: pasa por las paradas pero rodea las manzanas,
+      // así que trae más puntos que paradas tiene la ruta.
       final api = FakeApi().build();
       final routes = await api.fetchRoutes();
 
-      final shape = routes.first.shape;
-      expect(shape, hasLength(3));
-      expect(shape.first.latitude, 19.7008);
-      expect(shape.last.latitude, 19.6975);
+      final ruta = routes.first;
+      expect(ruta.roadShape.length, greaterThan(ruta.stops.length));
+      expect(ruta.shape, ruta.roadShape);
+      expect(ruta.shape.last.latitude, closeTo(19.6975, 0.001));
+    });
+
+    test('sin trazado del servidor, une las paradas en orden', () async {
+      // Es el respaldo de siempre: sin OSRM la línea va recta de parada a parada.
+      final api = FakeApi().build();
+      final routes = await api.fetchRoutes();
+
+      final ruta = routes.firstWhere((r) => r.roadShape.isEmpty);
+      expect(ruta.shape, [for (final stop in ruta.stops) stop.location]);
     });
   });
 

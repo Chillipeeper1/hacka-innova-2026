@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:maas_morelia/data/journey.dart';
 import 'package:maas_morelia/data/models.dart';
 import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/data/trip_plan.dart';
@@ -9,6 +10,8 @@ import 'package:maas_morelia/screens/board_bus_screen.dart';
 import 'package:maas_morelia/screens/onboard_trip_screen.dart';
 import 'package:maas_morelia/screens/rating_screen.dart';
 import 'package:maas_morelia/theme.dart';
+import 'package:maas_morelia/widgets/app_map.dart';
+import 'package:maas_morelia/widgets/trip_widgets.dart';
 
 import 'support/fakes.dart';
 
@@ -127,6 +130,94 @@ void main() {
       // En minutos, no en metros: a quien espera parado en la banqueta los metros no le
       // dicen nada.
       expect(find.textContaining('La unidad llega en'), findsOneWidget);
+    });
+
+    testWidgets('la parada de espera se lee en la hoja', (tester) async {
+      final container = await waitingAtStop();
+      await pump(tester, container, const BoardBusScreen());
+      placeBus(container, 800);
+      await tester.pump(const Duration(milliseconds: 10));
+      expectNoLayoutError(tester, 'parada en la hoja');
+
+      final stop = container.read(tripPlanProvider).chosen!.boardingStop.name;
+      expect(find.text('Esperas en'), findsOneWidget);
+      expect(find.text(stop), findsOneWidget);
+
+      // Dentro de la hoja blanca, no en la tarjeta flotante que tapaba el mapa.
+      final sheet = tester.getRect(find.byType(TripSheet));
+      expect(sheet.contains(tester.getRect(find.text(stop)).topLeft), isTrue);
+    });
+
+    testWidgets('el camión del mapa va donde dice el canal en vivo', (
+      tester,
+    ) async {
+      // Esta prueba existe por un reporte de "el icono del camión se va hacia todos lados".
+      // No era la app: `npm run simulate` emite la coordenada de una parada distinta cada 3
+      // segundos y reinicia con `index % stops.length`, así que la unidad se teletransporta
+      // —hasta 1274 m de ida y vuelta en la ruta de dos paradas—. Lo que se fija aquí es que
+      // el marcador dibuja la posición recibida y ninguna otra: si vuelve a saltar, el
+      // problema está en quien emite, no aquí.
+      final container = await waitingAtStop();
+      await pump(tester, container, const BoardBusScreen());
+
+      final option = container.read(tripPlanProvider).chosen!;
+      final stop = option.boardingStop.location;
+
+      LatLng? busMarker() {
+        for (final map in tester.widgetList<AppMap>(find.byType(AppMap))) {
+          for (final marker in map.markers) {
+            if (marker.id == 'unidad') return marker.point;
+          }
+        }
+        return null;
+      }
+
+      for (final meters in [900.0, 500.0, 150.0]) {
+        final sent = LatLng(stop.latitude + meters / 111000, stop.longitude);
+        realtime.emitVehicle(
+          VehiclePosition(
+            vehicleId: option.route.id,
+            lat: sent.latitude,
+            lng: sent.longitude,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+
+        expect(busMarker()?.latitude, closeTo(sent.latitude, 1e-9));
+        expect(busMarker()?.longitude, closeTo(sent.longitude, 1e-9));
+      }
+
+      // Y la unidad de otra ruta no lo mueve, por lejos que emita.
+      final before = busMarker();
+      realtime.emitVehicle(
+        VehiclePosition(
+          vehicleId: option.route.id + 1,
+          lat: 19.75,
+          lng: -101.05,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(busMarker(), before);
+    });
+
+    testWidgets('mientras esperas dice si viene camión o combi', (
+      tester,
+    ) async {
+      final container = await waitingAtStop();
+      await pump(tester, container, const BoardBusScreen());
+      placeBus(container, 800);
+      await tester.pump(const Duration(milliseconds: 10));
+      expectNoLayoutError(tester, 'etiqueta de servicio');
+
+      // Es la pantalla donde más importa: se está esperando algo y hay que reconocerlo cuando
+      // aparezca. La etiqueta dice el servicio de la ruta elegida, no uno cualquiera.
+      final route = container.read(tripPlanProvider).chosen!.route;
+      final badge = tester.widget<ServiceBadge>(find.byType(ServiceBadge));
+      expect(badge.mode, route.mode);
+      expect(
+        find.text(JourneyMode.fromWire(route.mode).serviceLabel),
+        findsOneWidget,
+      );
     });
 
     testWidgets('al acercarse la unidad pide el pago', (tester) async {
@@ -271,6 +362,87 @@ void main() {
       expect(find.textContaining('monedas'), findsOneWidget);
     });
 
+    testWidgets('la parada de bajada se lee en la hoja', (tester) async {
+      final container = await onboard();
+      await pump(tester, container, const OnboardTripScreen());
+      placeBusNearAlighting(container, 2000);
+      await tester.pump(const Duration(milliseconds: 10));
+      expectNoLayoutError(tester, 'bajada en la hoja');
+
+      final alighting = container
+          .read(tripPlanProvider)
+          .chosen!
+          .alightingStop
+          .name;
+      expect(find.text('Vas hacia'), findsOneWidget);
+
+      final sheet = tester.getRect(find.byType(TripSheet));
+      final line = tester.getRect(find.text(alighting));
+      expect(sheet.contains(line.topLeft), isTrue);
+    });
+
+    testWidgets('la estela azul sigue el trazado, no corta manzanas', (
+      tester,
+    ) async {
+      // La opción por omisión de estas pruebas cae en la ruta sin trazado por calles, donde
+      // `shape` es el respaldo recto entre paradas y no habría nada que comprobar. Aquí se
+      // elige a propósito una con trazado.
+      final container = await waitingAtStop();
+      final notifier = container.read(tripPlanProvider.notifier);
+      final option = container
+          .read(tripPlanProvider)
+          .options
+          .firstWhere((candidate) => candidate.route.shape.length > 2);
+      notifier.choose(option);
+      notifier.markOnboard(method: PaymentMethod.coins);
+      addTearDown(container.listen(atAlightingProvider, (_, _) {}).close);
+
+      await pump(tester, container, const OnboardTripScreen());
+
+      final shape = option.route.shape;
+
+      // La unidad, sobre el vértice del trazado más lejano a la parada de subida: así hay
+      // trazado de por medio que dibujar. El vértice de en medio podía tocarle justo al lado
+      // de la parada, y entonces la prueba no distinguía una estela buena de una recta.
+      const distance = Distance();
+      final vehicle = shape.reduce(
+        (a, b) =>
+            distance(a, option.boardingStop.location) >
+                distance(b, option.boardingStop.location)
+            ? a
+            : b,
+      );
+      realtime.emitVehicle(
+        VehiclePosition(
+          vehicleId: option.route.id,
+          lat: vehicle.latitude,
+          lng: vehicle.longitude,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      expectNoLayoutError(tester, 'estela');
+
+      final trail = [
+        for (final map in tester.widgetList<AppMap>(find.byType(AppMap)))
+          for (final line in map.lines)
+            if (line.id == 'recorrido') line,
+      ].single;
+
+      // Empieza en la parada y termina en la unidad...
+      expect(trail.points.first, option.boardingStop.location);
+      expect(trail.points.last, vehicle);
+      // ...y pasa por los vértices del trazado que hay en medio, en vez de ser el segmento
+      // recto de dos puntos que se dibujaba antes.
+      expect(trail.points.length, greaterThan(2));
+      for (final point in trail.points.sublist(1, trail.points.length - 1)) {
+        expect(
+          shape.contains(point),
+          isTrue,
+          reason: '$point no está sobre el trazado de la ruta',
+        );
+      }
+    });
+
     testWidgets('no avisa la bajada demasiado pronto', (tester) async {
       final container = await onboard();
       await pump(tester, container, const OnboardTripScreen());
@@ -299,7 +471,9 @@ void main() {
           .alightingStop
           .name;
       expect(find.textContaining(alighting), findsWidgets);
-      expect(find.textContaining('min'), findsWidgets);
+      // Y cuánto falta. La unidad va comprimida para la demo, así que normalmente son
+      // segundos y no minutos — lo que se exige es que el contador esté, no su unidad.
+      expect(find.textContaining(RegExp(r'· en \d+ (s|min)')), findsWidgets);
     });
 
     testWidgets('al llegar a la parada de bajada termina el viaje solo', (

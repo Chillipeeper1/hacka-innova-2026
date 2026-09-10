@@ -45,7 +45,11 @@ void main() {
     viewports.forEach((name, size) {
       testWidgets(name, (tester) async {
         await pumpAt(tester, size);
-        expect(tester.takeException(), isNull, reason: 'desbordamiento en $name');
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'desbordamiento en $name',
+        );
         expect(find.text('Iniciar sesión'), findsOneWidget);
       });
     });
@@ -69,11 +73,7 @@ void main() {
 
   testWidgets('ofrece ir al registro, no a iniciar sesión', (tester) async {
     var toRegister = 0;
-    await pumpAt(
-      tester,
-      const Size(402, 874),
-      onRegister: () => toRegister++,
-    );
+    await pumpAt(tester, const Size(402, 874), onRegister: () => toRegister++);
 
     expect(find.textContaining('¿No tienes cuenta?'), findsOneWidget);
 
@@ -84,11 +84,7 @@ void main() {
 
   testWidgets('no entra con el formulario vacío', (tester) async {
     var submissions = 0;
-    await pumpAt(
-      tester,
-      const Size(402, 874),
-      onSubmit: (_) => submissions++,
-    );
+    await pumpAt(tester, const Size(402, 874), onSubmit: (_) => submissions++);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
     await tester.pumpAndSettle();

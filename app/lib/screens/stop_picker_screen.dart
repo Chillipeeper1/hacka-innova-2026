@@ -96,6 +96,13 @@ class StopPickerScreen extends ConsumerWidget {
                                 waitingCount: options[i].waitingCount,
                                 busy: options[i].isBusy,
                                 subtitle: _subtitleFor(options[i]),
+                                badge: ServiceBadge(
+                                  width: width,
+                                  mode: options[i].route.mode,
+                                  color: colorFromHex(
+                                    options[i].route.colorHex,
+                                  ),
+                                ),
                                 onTap: () => onChoose?.call(options[i]),
                               ),
                             ],

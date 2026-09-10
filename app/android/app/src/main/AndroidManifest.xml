@@ -1,8 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="maas_morelia"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic: el backend del mockup corre en HTTP sobre la LAN
+             (http://<ip-de-tu-maquina>:3001) y Android lo bloquea desde API 28. Es una
+             concesión de la demo; en producción el servidor va detrás de HTTPS y esto se quita. -->
+        <!-- La clave la inyecta build.gradle.kts leyendo app/.env: fuera de git, como en web. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

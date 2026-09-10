@@ -10,26 +10,42 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../theme.dart';
 
+/// Logo de MTAPP: el acueducto, el camión y el teleférico dentro de su aro.
+///
+/// Sustituye al antiguo texto "MTAPP", que decía lo mismo con menos: el logo ya trae el nombre
+/// y "Movilidad Morelia" dibujados dentro.
+///
+/// **Por qué va dentro de un círculo blanco propio** en vez de pegar el archivo tal cual: el
+/// original es un JPG sin transparencia —blanco hasta las esquinas—, así que sobre la fotografía
+/// de la pantalla inicial se vería como un recuadro recortado a tijera. El círculo lo convierte
+/// en una insignia; sobre el blanco de las pantallas de acceso desaparece y solo queda el
+/// dibujo.
+///
+/// **Por qué no se recorta el archivo a un óvalo**, que sería lo obvio: la imagen no es cuadrada
+/// (524x559) y el aro del logo llega casi hasta los bordes laterales, así que un `ClipOval` le
+/// comería los costados. Se contiene dentro del círculo, con holgura, y el original queda
+/// intacto.
+class MtappLogo extends StatelessWidget {
+  const MtappLogo({super.key, required this.diameter});
 
-/// Marca "MTAPP".
-class MtappWordmark extends StatelessWidget {
-  const MtappWordmark({super.key, required this.width, this.color});
-
-  final double width;
-
-  /// Blanco sobre la fotografía, negro sobre fondo claro.
-  final Color? color;
+  /// Diámetro del círculo blanco. El dibujo ocupa algo menos, para no tocar el borde.
+  final double diameter;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      'MTAPP',
-      style: TextStyle(
-        fontFamily: AppFonts.display,
-        fontFamilyFallback: AppFonts.displayFallback,
-        fontSize: fluid(width, designSize: 24, min: 20, max: 30),
-        color: color ?? Colors.white,
-        letterSpacing: 1.5,
+    return Semantics(
+      image: true,
+      label: 'MTAPP, Movilidad Morelia',
+      child: Container(
+        width: diameter,
+        height: diameter,
+        padding: EdgeInsets.all(diameter * 0.06),
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Image.asset('assets/images/mtapp-logo.jpg', fit: BoxFit.contain),
       ),
     );
   }

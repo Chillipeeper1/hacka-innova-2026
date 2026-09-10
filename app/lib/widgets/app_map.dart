@@ -27,12 +27,16 @@ class MapMarker {
     required this.id,
     required this.point,
     required this.icon,
+    this.onTap,
     this.semanticLabel,
   });
 
   final String id;
   final LatLng point;
   final MapIcon icon;
+
+  /// Qué pasa al tocarlo. Sin esto un marcador es solo un dibujo.
+  final VoidCallback? onTap;
 
   /// Qué anuncia un lector de pantalla. Google Maps no expone los marcadores al árbol de
   /// accesibilidad, así que esto viaja aparte y las pantallas lo publican por su cuenta.
@@ -73,6 +77,32 @@ class MapArea {
   final double borderWidth;
 }
 
+/// Mando de la cámara del mapa.
+///
+/// El mapa se mueve solo, con los dedos; esto existe para las pocas veces que la pantalla
+/// necesita moverlo por su cuenta —el botón de "mi ubicación" de la pantalla de destino—. La
+/// pantalla lo crea, se lo pasa a [AppMap] y a partir de ahí le pide centrados.
+///
+/// Antes de que el motor de mapas termine de montarse no hay a quién pedirle nada, y entonces
+/// [centerOn] no hace nada en vez de fallar: un toque que llega demasiado pronto se pierde, que
+/// es mejor que una excepción en pantalla.
+class AppMapController {
+  _AppMapState? _state;
+
+  void _attach(_AppMapState state) => _state = state;
+
+  void _detach(_AppMapState state) {
+    if (identical(_state, state)) _state = null;
+  }
+
+  /// Lleva la cámara a [point], con animación.
+  ///
+  /// Con [zoom] además acerca o aleja; sin él conserva el que tenga el mapa, que es lo que
+  /// espera quien solo quiso volver a encuadrarse sin perder el detalle que estaba viendo.
+  Future<void> centerOn(LatLng point, {double? zoom}) async =>
+      _state?.centerOn(point, zoom: zoom);
+}
+
 class AppMap extends StatefulWidget {
   const AppMap({
     super.key,
@@ -84,6 +114,7 @@ class AppMap extends StatefulWidget {
     this.areas = const [],
     this.onCameraMove,
     this.fitPadding = 60,
+    this.controller,
   });
 
   final LatLng initialCenter;
@@ -102,6 +133,9 @@ class AppMap extends StatefulWidget {
 
   final double fitPadding;
 
+  /// Con quién puede la pantalla mover la cámara sin esperar un gesto.
+  final AppMapController? controller;
+
   @override
   State<AppMap> createState() => _AppMapState();
 }
@@ -113,12 +147,23 @@ class _AppMapState extends State<AppMap> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(this);
     _loadIcons();
+  }
+
+  @override
+  void dispose() {
+    widget.controller?._detach(this);
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(AppMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
     // Los iconos se dibujan una vez y se guardan; solo hace falta redibujar si aparecieron
     // marcadores que no se habían visto (una etiqueta con texto nuevo, por ejemplo).
     final missing = widget.markers.any(
@@ -137,6 +182,18 @@ class _AppMapState extends State<AppMap> {
 
   gmaps.LatLng _toGoogle(LatLng point) =>
       gmaps.LatLng(point.latitude, point.longitude);
+
+  /// Recentra la cámara. Lo pide [AppMapController]; la pantalla no llega hasta aquí.
+  Future<void> centerOn(LatLng point, {double? zoom}) async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    await controller.animateCamera(
+      zoom == null
+          ? gmaps.CameraUpdate.newLatLng(_toGoogle(point))
+          : gmaps.CameraUpdate.newLatLngZoom(_toGoogle(point), zoom),
+    );
+  }
 
   Future<void> _fitCamera() async {
     final points = widget.fitTo;
@@ -219,6 +276,7 @@ class _AppMapState extends State<AppMap> {
               markerId: gmaps.MarkerId(marker.id),
               position: _toGoogle(marker.point),
               icon: icon,
+              onTap: marker.onTap,
             ),
       },
       polylines: {

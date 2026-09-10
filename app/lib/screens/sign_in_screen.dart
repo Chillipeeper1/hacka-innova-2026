@@ -55,10 +55,7 @@ class _SignInScreenState extends State<SignInScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     widget.onSubmit?.call(
-      SignInCredentials(
-        email: _email.text.trim(),
-        password: _password.text,
-      ),
+      SignInCredentials(email: _email.text.trim(), password: _password.text),
     );
   }
 
@@ -68,55 +65,50 @@ class _SignInScreenState extends State<SignInScreen> {
       formKey: _formKey,
       title: 'Iniciar sesión',
       titleDesignSize: 32,
-      promptBuilder:
-          (width) => AuthPrompt.register(
-            width: width,
-            designSize: 12,
-            onTap: widget.onRegister,
-          ),
+      promptBuilder: (width) => AuthPrompt.register(
+        width: width,
+        designSize: 12,
+        onTap: widget.onRegister,
+      ),
       ctaLabel: 'Entrar',
       onSubmit: _submit,
       onBack: widget.onBack,
       onGoogle: widget.onGoogle,
       onApple: widget.onApple,
-      fieldsBuilder:
-          (width, s) => [
-            FieldLabel(text: 'Correo', width: width),
-            PillTextField(
-              width: width,
-              // El diseño dice "Escribe tu nombre..." en este campo, heredado de la pantalla
-              // de registro. Aquí el campo es el correo.
-              hint: 'Escribe tu correo...',
-              controller: _email,
-              textInputAction: TextInputAction.next,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.username],
-              validator: (value) {
-                final text = value?.trim() ?? '';
-                return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text)
-                    ? null
-                    : 'Escribe un correo válido';
-              },
-            ),
-            SizedBox(height: 20 * s),
+      fieldsBuilder: (width, s) => [
+        FieldLabel(text: 'Correo', width: width),
+        PillTextField(
+          width: width,
+          // El diseño dice "Escribe tu nombre..." en este campo, heredado de la pantalla
+          // de registro. Aquí el campo es el correo.
+          hint: 'Escribe tu correo...',
+          controller: _email,
+          textInputAction: TextInputAction.next,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.username],
+          validator: (value) {
+            final text = value?.trim() ?? '';
+            return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text)
+                ? null
+                : 'Escribe un correo válido';
+          },
+        ),
+        SizedBox(height: 20 * s),
 
-            FieldLabel(text: 'Contraseña', width: width),
-            PillPasswordField(
-              width: width,
-              hint: '•••••••••••',
-              controller: _password,
-              textInputAction: TextInputAction.done,
-              autofillHints: const [AutofillHints.password],
-              // Al entrar no se valida la fortaleza — eso es cosa del registro. Aquí solo
-              // importa que el campo no vaya vacío; si la contraseña es incorrecta lo dice
-              // el servidor.
-              validator:
-                  (value) =>
-                      (value == null || value.isEmpty)
-                          ? 'Escribe tu contraseña'
-                          : null,
-            ),
-          ],
+        FieldLabel(text: 'Contraseña', width: width),
+        PillPasswordField(
+          width: width,
+          hint: '•••••••••••',
+          controller: _password,
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
+          // Al entrar no se valida la fortaleza — eso es cosa del registro. Aquí solo
+          // importa que el campo no vaya vacío; si la contraseña es incorrecta lo dice
+          // el servidor.
+          validator: (value) =>
+              (value == null || value.isEmpty) ? 'Escribe tu contraseña' : null,
+        ),
+      ],
     );
   }
 }

@@ -6,7 +6,10 @@ import 'package:maas_morelia/data/walk_route.dart';
 import 'package:maas_morelia/data/walk_trip.dart';
 import 'package:maas_morelia/widgets/app_map.dart';
 import 'package:maas_morelia/screens/walk_trip_screen.dart';
+import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/theme.dart';
+
+import 'support/fakes.dart';
 
 /// La pantalla del viaje a pie.
 ///
@@ -23,7 +26,16 @@ void main() {
 
   late ProviderContainer container;
 
-  setUp(() => container = ProviderContainer());
+  // Con API falsa: el ajuste a calles sale a la red, y una prueba no puede depender de
+  // que el servidor esté levantado.
+  setUp(
+    () => container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(FakeApi().build()),
+        reverseGeocoderProvider.overrideWithValue(FakeGeocoder()),
+      ],
+    ),
+  );
 
   /// Apaga el timer del peatón simulado.
   ///

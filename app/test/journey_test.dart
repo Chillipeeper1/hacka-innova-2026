@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/journey.dart';
+import 'package:maas_morelia/data/path_geometry.dart';
 
 import 'support/fakes.dart';
 
@@ -118,6 +120,127 @@ void main() {
       for (var i = 0; i < points.length - 1; i++) {
         expect(points[i], isNot(points[i + 1]));
       }
+    });
+  });
+
+  group('Journey lee el trazado por calles', () {
+    List<Journey> conGeometria() {
+      final body =
+          jsonDecode(journeysWithGeometryPayload) as Map<String, dynamic>;
+      return (body['alternatives'] as List<dynamic>)
+          .map((json) => Journey.fromJson(json as Map<String, dynamic>))
+          .toList();
+    }
+
+    test('el tramo de transporte trae su trazado', () {
+      final combi = conGeometria().first.legs.firstWhere(
+        (leg) => leg.mode == JourneyMode.combi,
+      );
+
+      expect(combi.geometry.length, greaterThan(2));
+      // Y cae donde debe: el trazado empieza y acaba en los extremos del tramo, no invertido.
+      // Confundir [lat, lng] con [lng, lat] pondría la ruta en el océano Índico.
+      expect(
+        combi.geometry.first.latitude,
+        closeTo(combi.from.location.latitude, 0.01),
+      );
+      expect(
+        combi.geometry.first.longitude,
+        closeTo(combi.from.location.longitude, 0.01),
+      );
+      expect(
+        combi.geometry.last.latitude,
+        closeTo(combi.to.location.latitude, 0.01),
+      );
+    });
+
+    test('sigue calles: es más largo que la recta que lo generó', () {
+      // Si fueran iguales, el trazado sería la propia recta y no habríamos ganado nada.
+      final combi = conGeometria().first.legs.firstWhere(
+        (leg) => leg.mode == JourneyMode.combi,
+      );
+
+      expect(pathLengthMeters(combi.geometry), greaterThan(combi.meters));
+    });
+
+    test('un tramo sin trazado se dibuja recto entre sus extremos', () {
+      // Las conexiones a pie de longitud cero no traen geometría, y el teleférico tampoco:
+      // va por el aire. `path` tiene que servir igual para dibujarlos.
+      final aPie = conGeometria().first.legs.firstWhere(
+        (leg) => leg.mode == JourneyMode.walk,
+      );
+
+      expect(aPie.geometry, isEmpty);
+      expect(aPie.path, [aPie.from.location, aPie.to.location]);
+    });
+
+    test('el encuadre del mapa cubre el trazado, no solo los extremos', () {
+      final viaje = conGeometria().first;
+      final combi = viaje.legs.firstWhere(
+        (leg) => leg.mode == JourneyMode.combi,
+      );
+
+      expect(viaje.points, containsAll(combi.geometry));
+    });
+
+    test('una respuesta sin `geometry` sigue leyéndose', () {
+      // El campo es opcional: un servidor sin OSRM, o con OSRM caído, manda los tramos pelados.
+      final sinGeometria = parse().first.legs.first;
+
+      expect(sinGeometria.geometry, isEmpty);
+      expect(sinGeometria.path, hasLength(2));
+    });
+  });
+
+  group('viajes fuera de lo que cubre la red', () {
+    // El motor del servidor limita la bici a 6 km pero a caminar no le pone tope, así que un
+    // destino al que ninguna ruta se acerca vuelve como "unos minutos en transporte y el resto
+    // a pie". Medido contra el servidor: 10 km al sur del centro devuelve 5 min en bici y
+    // 122 min caminando, y eso se enseñaba como un itinerario normal.
+    JourneyLeg leg(JourneyMode mode, double meters, double minutes) =>
+        JourneyLeg(
+          mode: mode,
+          from: const JourneyPlace(location: LatLng(19.7008, -101.1844)),
+          to: const JourneyPlace(location: LatLng(19.61, -101.1844)),
+          meters: meters,
+          minutes: minutes,
+        );
+
+    Journey journey(List<JourneyLeg> legs) => Journey(
+      label: 'Tu selección',
+      legs: legs,
+      totalMeters: legs.fold(0, (sum, leg) => sum + leg.meters),
+      totalMinutes: legs.fold(0, (sum, leg) => sum + leg.minutes),
+    );
+
+    test('un tramo a pie de kilómetros queda marcado', () {
+      final imposible = journey([
+        leg(JourneyMode.bike, 1274, 5.1),
+        leg(JourneyMode.walk, 9118, 121.6),
+      ]);
+
+      expect(imposible.longestWalkMeters, 9118);
+      expect(imposible.beyondNetwork, isTrue);
+    });
+
+    test('las caminatas de conexión normales no lo marcan', () {
+      // Dos tramos a pie razonables suman más que el tope, y aun así el viaje es bueno: lo que
+      // lo vuelve imposible es un tramo largo, no la suma de dos cortos.
+      final normal = journey([
+        leg(JourneyMode.walk, 1400, 18.7),
+        leg(JourneyMode.combi, 9398, 40.6),
+        leg(JourneyMode.walk, 1400, 18.7),
+      ]);
+
+      expect(normal.longestWalkMeters, 1400);
+      expect(normal.beyondNetwork, isFalse);
+    });
+
+    test('un viaje sin caminata no puede quedar marcado', () {
+      final directo = journey([leg(JourneyMode.combi, 9398, 40.6)]);
+
+      expect(directo.longestWalkMeters, 0);
+      expect(directo.beyondNetwork, isFalse);
     });
   });
 }

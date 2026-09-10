@@ -50,7 +50,14 @@ class LoginScreen extends StatelessWidget {
                           bottom: false,
                           child: Padding(
                             padding: EdgeInsets.only(top: 20 * scaleFor(width)),
-                            child: MtappWordmark(width: width),
+                            child: MtappLogo(
+                              diameter: fluid(
+                                width,
+                                designSize: 96,
+                                min: 72,
+                                max: 112,
+                              ),
+                            ),
                           ),
                         ),
                         const Spacer(flex: 5),

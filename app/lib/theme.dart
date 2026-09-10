@@ -40,8 +40,10 @@ class AppColors {
   /// Texto de marcador dentro de un campo vacío: el mismo gris al 49%.
   static const Color placeholder = Color(0x7D8A8A8A);
 
-  /// Botón circular de regreso.
-  static const Color mint = Color(0xFFDCFFB8);
+  /// Verde claro de los botones: el circular de regreso, los cuadrados del mapa y el chip de
+  /// alternativa seleccionada. También lo usa el aviso de "prepárate para bajar", que no es un
+  /// botón pero comparte el mismo verde a propósito.
+  static const Color mint = Color(0xFFDEEFCD);
 
   /// Parada concurrida: mucha gente esperando.
   static const Color crowdBusy = Color(0xFFFFC400);
@@ -61,6 +63,14 @@ class AppColors {
   /// las marcadas, no solo que hay una mancha.
   static const Color unsafeZone = Color(0xFFD32F2F);
   static const Color unsafeZoneArea = Color(0xFFFF3B30);
+
+  /// Espacio pagado: los negocios publicitados que salen al llegar al destino.
+  ///
+  /// Naranja y no magenta: el magenta es "lo que la app quiere que toques" —el CTA, MTAPP
+  /// Plus— y un anuncio no es una acción del producto. Tampoco verde ni ámbar, que en el mapa
+  /// ya significan parada despejada y parada llena. Lo que se paga se lee aparte de lo que el
+  /// sistema recomienda, o deja de creerse cualquiera de los dos.
+  static const Color sponsored = Color(0xFFE07A1F);
 
   /// Velo sobre el mapa cuando se pide una confirmación.
   static const Color modalScrim = Color(0x8A000000); // negro al 54%

@@ -1,18 +1,43 @@
 /// Piezas compartidas por las pantallas del viaje.
 ///
 /// El diseño repite los mismos controles en cinco pantallas con mapa: menú, perfil, el círculo
-/// verde de regreso, la tarjeta blanca flotante y el renglón de parada con su indicador de
-/// gente. Se definen una vez para que no se separen al primer ajuste.
+/// verde de regreso y el renglón de parada con su indicador de gente. Se definen una vez para
+/// que no se separen al primer ajuste.
 library;
 
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:latlong2/latlong.dart';
 
+import '../data/journey.dart';
 import '../theme.dart';
+import 'address_text.dart';
 import 'branding.dart';
 import 'map_chrome.dart';
+
+/// Color de cada modo. El mismo criterio que en el resto de la app: azul lo que se camina,
+/// verde la bici, y cada servicio con su color.
+///
+/// Vive aquí y no en una pantalla porque lo usan tanto la elección de medios como el
+/// itinerario: el chip que el pasajero prendió y el tramo que le tocó recorrer tienen que
+/// verse del mismo color, o no se reconocen como la misma cosa.
+Color journeyModeColor(JourneyMode mode) => switch (mode) {
+  JourneyMode.walk => AppColors.walkPath,
+  JourneyMode.bike => AppColors.green,
+  JourneyMode.bus => AppColors.magenta,
+  JourneyMode.combi => AppColors.magentaDeep,
+  JourneyMode.cableCar => const Color(0xFF7B2FF7),
+};
+
+/// La combi comparte icono con el camión: no hay trazo propio en el set del diseño.
+String journeyModeAsset(JourneyMode mode) => switch (mode) {
+  JourneyMode.walk => 'assets/icons/walk.svg',
+  JourneyMode.bike => 'assets/icons/bicycle.svg',
+  JourneyMode.bus || JourneyMode.combi => 'assets/icons/bus.svg',
+  JourneyMode.cableCar => 'assets/icons/cable-car.svg',
+};
 
 /// Controles superiores comunes a todas las pantallas con mapa.
 class MapTopControls extends StatelessWidget {
@@ -22,6 +47,7 @@ class MapTopControls extends StatelessWidget {
     this.onMenu,
     this.onProfile,
     this.onBack,
+    this.panic,
     this.trailing,
   });
 
@@ -31,6 +57,14 @@ class MapTopControls extends StatelessWidget {
 
   /// Si es `null`, no se dibuja el botón de regreso.
   final VoidCallback? onBack;
+
+  /// El botón de pánico, en las pantallas que van dentro de un viaje.
+  ///
+  /// Va aquí y no flotando junto a la hoja inferior porque la hoja cambia de alto en cada
+  /// pantalla —y en algunas cambia sola, al llegar la unidad— y un botón de emergencia no
+  /// puede estar en un lugar distinto cada vez que se busca. Arriba a la derecha, espejo del
+  /// círculo de regreso, está siempre en el mismo sitio.
+  final Widget? panic;
 
   /// Contenido extra debajo de los controles: una tarjeta, un buscador.
   final Widget? trailing;
@@ -69,19 +103,24 @@ class MapTopControls extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (onBack != null) ...[
+                if (onBack != null || panic != null) ...[
                   SizedBox(height: 30 * s),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: CircleIconButton(
-                      asset: 'assets/icons/chevron-left.svg',
-                      label: 'Regresar',
-                      diameter: 68 * s,
-                      background: AppColors.mint,
-                      iconRatio: 0.47,
-                      shadow: AppShadows.circleButton,
-                      onTap: onBack,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (onBack != null)
+                        CircleIconButton(
+                          asset: 'assets/icons/chevron-left.svg',
+                          label: 'Regresar',
+                          diameter: 68 * s,
+                          background: AppColors.mint,
+                          iconRatio: 0.47,
+                          shadow: AppShadows.circleButton,
+                          onTap: onBack,
+                        ),
+                      const Spacer(),
+                      ?panic,
+                    ],
                   ),
                 ],
                 if (trailing != null) ...[SizedBox(height: 26 * s), trailing!],
@@ -94,67 +133,179 @@ class MapTopControls extends StatelessWidget {
   }
 }
 
-/// Tarjeta blanca flotante con el icono de camión y varias líneas.
+/// Renglón de "a dónde vas" dentro de la hoja blanca.
 ///
-/// Misma forma que la tarjeta de búsqueda, pero con contenido de varias líneas: el diseño la
-/// usa para "Vas hacia la parada: ...".
-class MapInfoCard extends StatelessWidget {
-  const MapInfoCard({
+/// Esto vivía en una tarjeta flotante propia sobre el mapa, justo debajo de los controles de
+/// arriba, y tapaba la parte del mapa por la que se va a pasar. Es información de referencia
+/// —se consulta una vez y se olvida— así que su lugar es la hoja, donde ya se lee todo lo demás
+/// del viaje: el tiempo, los tramos, el botón de terminar.
+///
+/// Hay dos formas de nombrar un destino y por eso hay dos constructores: las paradas y
+/// estaciones del catálogo tienen nombre propio, y un punto suelto del mapa no — de ese se
+/// enseña su dirección de calle.
+class TripDestinationLine extends StatelessWidget {
+  /// Un destino con nombre: una parada o estación.
+  const TripDestinationLine.named({
     super.key,
     required this.width,
-    required this.lines,
+    required this.label,
+    required this.name,
     this.asset = 'assets/icons/bus.svg',
-  });
+    this.badge,
+  }) : point = null;
+
+  /// Un punto del mapa, del que se averigua la dirección (ver [AddressText]).
+  const TripDestinationLine.at({
+    super.key,
+    required this.width,
+    required this.label,
+    required this.point,
+    this.asset = 'assets/icons/pin-dark.svg',
+    this.badge,
+  }) : name = null;
 
   final double width;
-  final List<String> lines;
+
+  /// Qué relación hay con ese lugar: "Vas hacia", "Esperas en", "Llegaste a".
+  final String label;
+
   final String asset;
+
+  /// El nombre propio del destino, cuando lo tiene.
+  final String? name;
+
+  /// El punto del destino, cuando hay que averiguar su dirección. Uno de los dos es nulo.
+  final LatLng? point;
+
+  /// Etiqueta del servicio, al lado de la relación con el lugar. Ver [ServiceBadge].
+  final Widget? badge;
 
   @override
   Widget build(BuildContext context) {
     final s = scaleFor(width);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.floatingCard),
-        boxShadow: AppShadows.floatingCard,
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(AppRadius.floatingCard),
-        ),
-        padding: EdgeInsets.symmetric(horizontal: 26 * s, vertical: 20 * s),
-        child: Row(
-          children: [
-            SvgPicture.asset(asset, width: 34 * s, height: 38 * s),
-            SizedBox(width: 22 * s),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final line in lines)
-                    Text(
-                      line,
-                      style: TextStyle(
-                        fontFamily: AppFonts.button,
-                        fontFamilyFallback: AppFonts.buttonFallback,
-                        fontSize: fluid(
-                          width,
-                          designSize: 24,
-                          min: 16,
-                          max: 25,
+    final valueStyle = TextStyle(
+      fontFamily: AppFonts.button,
+      fontFamilyFallback: AppFonts.buttonFallback,
+      fontSize: fluid(width, designSize: 18, min: 14, max: 19),
+      height: 1.2,
+      color: Colors.black,
+    );
+
+    return Semantics(
+      container: true,
+      // El destino cambia solo cuando llega la dirección del servicio; que se anuncie sin
+      // tener que volver a recorrer la hoja.
+      liveRegion: point != null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SvgPicture.asset(asset, width: 26 * s, height: 30 * s),
+          SizedBox(width: 14 * s),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: fluid(
+                            width,
+                            designSize: 14,
+                            min: 12,
+                            max: 15,
+                          ),
+                          color: AppColors.muted,
                         ),
-                        height: 1.18,
-                        color: Colors.black,
                       ),
                     ),
-                ],
-              ),
+                    if (badge case final badge?) ...[
+                      SizedBox(width: 8 * s),
+                      badge,
+                    ],
+                  ],
+                ),
+                SizedBox(height: 2 * s),
+                if (name case final String value)
+                  Text(
+                    value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: valueStyle,
+                  )
+                else
+                  AddressText(point: point!, style: valueStyle, maxLines: 2),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Etiqueta del servicio que pasa por una parada: "Combi", "Camión", "Teleférico".
+///
+/// El icono no alcanza para distinguirlos —la combi y el camión comparten trazo, no hay uno
+/// propio en el set del diseño— así que lo que distingue es el texto. Sin esto, dos paradas de
+/// servicios distintos se ven idénticas y no hay forma de saber qué va a llegar.
+///
+/// El color sale de la ruta, al 22% de fondo con el texto en negro encima: usar el color de la
+/// ruta como texto no funciona —el ámbar `#D19B3D` sobre blanco no llega ni a 3:1— y sobre un
+/// tinte claro el negro sí se lee.
+class ServiceBadge extends StatelessWidget {
+  const ServiceBadge({
+    super.key,
+    required this.width,
+    required this.mode,
+    required this.color,
+  });
+
+  final double width;
+
+  /// El `mode` de la ruta tal como lo manda el servidor: `combi`, `bus`, `teleferico`.
+  final String mode;
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = JourneyMode.tryFromWire(mode);
+    // Un modo que esta versión no conoce no se etiqueta: mejor sin etiqueta que con una falsa.
+    if (service == null) return const SizedBox.shrink();
+
+    final s = scaleFor(width);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 9 * s, vertical: 3 * s),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            journeyModeAsset(service),
+            width: 13 * s,
+            height: 13 * s,
+          ),
+          SizedBox(width: 6 * s),
+          Text(
+            service.serviceLabel,
+            style: TextStyle(
+              fontSize: fluid(width, designSize: 13, min: 11, max: 14),
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -189,6 +340,7 @@ class StopListTile extends StatelessWidget {
     required this.waitingCount,
     required this.busy,
     this.subtitle,
+    this.badge,
     this.asset = 'assets/icons/pin-dark.svg',
     this.onTap,
   });
@@ -197,6 +349,9 @@ class StopListTile extends StatelessWidget {
   final String title;
   final int waitingCount;
   final bool busy;
+
+  /// Etiqueta del servicio que pasa por aquí, si se conoce. Ver [ServiceBadge].
+  final Widget? badge;
 
   /// Segunda línea: en la lista de opciones dice qué tan cerca del destino deja.
   final String? subtitle;
@@ -254,6 +409,10 @@ class StopListTile extends StatelessWidget {
                       SizedBox(height: 8 * s),
                       Row(
                         children: [
+                          if (badge case final badge?) ...[
+                            badge,
+                            SizedBox(width: 10 * s),
+                          ],
                           CrowdDot(busy: busy, size: 18 * s),
                           SizedBox(width: 10 * s),
                           Flexible(

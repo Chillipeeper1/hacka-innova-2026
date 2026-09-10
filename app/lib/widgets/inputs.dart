@@ -12,7 +12,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../theme.dart';
 
-
 /// CTA principal: píldora magenta a todo lo ancho.
 class PrimaryPillButton extends StatelessWidget {
   const PrimaryPillButton({
@@ -304,8 +303,7 @@ class PillDateField extends StatelessWidget {
                       fontFamilyFallback: AppFonts.bodyFallback,
                       fontSize: fontSize,
                       fontWeight: FontWeight.w500,
-                      color:
-                          hasValue ? AppColors.muted : AppColors.placeholder,
+                      color: hasValue ? AppColors.muted : AppColors.placeholder,
                     ),
                   ),
                 ],

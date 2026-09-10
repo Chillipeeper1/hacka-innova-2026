@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../data/nearby_ads.dart';
 import '../data/providers.dart';
 import '../data/trip_plan.dart';
 import '../theme.dart';
 import '../widgets/inputs.dart';
+import '../widgets/sponsored_places.dart';
 
 /// Fin del viaje: comentario y calificación.
 ///
@@ -78,9 +80,8 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () =>
-              _error =
-                  'No pudimos guardar tu calificación. Puedes omitirla. $error',
+          () => _error =
+              'No pudimos guardar tu calificación. Puedes omitirla. $error',
         );
       }
     } finally {
@@ -90,6 +91,8 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final destination = ref.watch(tripPlanProvider).destination;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -116,10 +119,9 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                         alignment: Alignment.centerLeft,
                         child: _SkipButton(
                           width: width,
-                          onTap:
-                              _submitting
-                                  ? null
-                                  : () => _finish(withRating: false),
+                          onTap: _submitting
+                              ? null
+                              : () => _finish(withRating: false),
                         ),
                       ),
                       SizedBox(height: 28 * s),
@@ -140,7 +142,18 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                           color: Colors.black,
                         ),
                       ),
-                      SizedBox(height: 34 * s),
+                      SizedBox(height: 28 * s),
+                      // Los negocios de la zona a la que acaba de llegar. Van arriba de la
+                      // calificación porque es el momento en que sirven —está a pie y todavía
+                      // no decide a dónde entra—, y en tira horizontal para no empujar las
+                      // estrellas fuera de la pantalla. Ver `data/nearby_ads.dart`.
+                      if (destination != null) ...[
+                        SponsoredStrip(
+                          width: width,
+                          places: adsAround(destination),
+                        ),
+                        SizedBox(height: 20 * s),
+                      ],
                       Text(
                         '¿Tienes algún comentario, queja o sugerencia? Escríbenos',
                         style: TextStyle(
@@ -173,8 +186,7 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                       _Stars(
                         width: width,
                         value: _rating,
-                        onChanged:
-                            (value) => setState(() => _rating = value),
+                        onChanged: (value) => setState(() => _rating = value),
                       ),
                       if (_error != null) ...[
                         SizedBox(height: 14 * s),
@@ -194,10 +206,9 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                         designHeight: 44,
                         // Sin estrellas no hay nada que enviar; el botón cierra igual, que es
                         // lo mismo que omitir.
-                        onPressed:
-                            _submitting
-                                ? null
-                                : () => _finish(withRating: _rating > 0),
+                        onPressed: _submitting
+                            ? null
+                            : () => _finish(withRating: _rating > 0),
                       ),
                     ],
                   ),

@@ -182,7 +182,11 @@ void main() {
         (option) => option.boardingStop.name == 'Catedral de Morelia',
       );
       expect(catedral.waitingCount, 9);
-      expect(catedral.isBusy, isTrue, reason: '9 supera el umbral de concurrida');
+      expect(
+        catedral.isBusy,
+        isTrue,
+        reason: '9 supera el umbral de concurrida',
+      );
     });
   });
 
@@ -190,7 +194,9 @@ void main() {
     Future<ProviderContainer> container() async {
       final c = ProviderContainer(
         overrides: [
-          apiClientProvider.overrideWithValue(FakeApi().build()),
+          apiClientProvider.overrideWithValue(
+            FakeApi(walkPathJson: walkPathPayload).build(),
+          ),
           realtimeClientProvider.overrideWithValue(FakeRealtimeClient()),
         ],
       );
@@ -234,9 +240,48 @@ void main() {
       notifier.choose(c.read(tripPlanProvider).options.first);
       expect(c.read(tripPlanProvider).stage, TripStage.stopChosen);
 
+      // Sin `await`: se echa a andar de inmediato y el trazado llega después. Esperar a la
+      // red antes de mover al pasajero dejaría la pantalla congelada por una línea más bonita.
       notifier.startWalking();
       expect(c.read(tripPlanProvider).stage, TripStage.walking);
     });
+
+    test('la caminata a la parada sigue las calles', () async {
+      final c = await container();
+      final notifier = c.read(tripPlanProvider.notifier);
+
+      notifier.setDestination(const LatLng(19.6920, -101.1772));
+      notifier.choose(c.read(tripPlanProvider).options.first);
+
+      // Antes de que conteste el servidor la línea es recta; no hay nada mejor todavía.
+      final walking = notifier.startWalking();
+      expect(c.read(tripPlanProvider).walkPath, isEmpty);
+
+      await walking;
+      expect(c.read(tripPlanProvider).walkPath.length, greaterThan(2));
+    });
+
+    test(
+      'sin trazado del servidor se camina recto, sin romper el viaje',
+      () async {
+        final c = ProviderContainer(
+          overrides: [
+            apiClientProvider.overrideWithValue(FakeApi().build()),
+            realtimeClientProvider.overrideWithValue(FakeRealtimeClient()),
+          ],
+        );
+        addTearDown(c.dispose);
+        await c.read(routesProvider.future);
+
+        final notifier = c.read(tripPlanProvider.notifier);
+        notifier.setDestination(const LatLng(19.6920, -101.1772));
+        notifier.choose(c.read(tripPlanProvider).options.first);
+        await notifier.startWalking();
+
+        expect(c.read(tripPlanProvider).walkPath, isEmpty);
+        expect(c.read(tripPlanProvider).stage, TripStage.walking);
+      },
+    );
 
     test('estar ya en la parada cuenta como haber llegado', () async {
       // Si el usuario elige subirse donde ya está, no tiene sentido mandarlo a caminar.
@@ -244,10 +289,12 @@ void main() {
       final notifier = c.read(tripPlanProvider.notifier);
 
       notifier.setDestination(const LatLng(19.6920, -101.1772));
-      final aquiMismo = c.read(tripPlanProvider).options.reduce(
-        (a, b) =>
-            a.metersToBoardingStop < b.metersToBoardingStop ? a : b,
-      );
+      final aquiMismo = c
+          .read(tripPlanProvider)
+          .options
+          .reduce(
+            (a, b) => a.metersToBoardingStop < b.metersToBoardingStop ? a : b,
+          );
       notifier.choose(aquiMismo);
       notifier.startWalking();
 
@@ -255,32 +302,37 @@ void main() {
       expect(sub.read(), isTrue);
     });
 
-    test('se llega cuando la posición entra en el radio de la parada', () async {
-      final c = await container();
-      final notifier = c.read(tripPlanProvider.notifier);
+    test(
+      'se llega cuando la posición entra en el radio de la parada',
+      () async {
+        final c = await container();
+        final notifier = c.read(tripPlanProvider.notifier);
 
-      notifier.setDestination(const LatLng(19.6920, -101.1772));
+        notifier.setDestination(const LatLng(19.6920, -101.1772));
 
-      // A propósito una parada lejos del punto de partida: la mejor opción suele ser la
-      // Catedral, que es donde el usuario ya está, y ahí ya habría "llegado".
-      final option = c.read(tripPlanProvider).options.reduce(
-        (a, b) =>
-            a.metersToBoardingStop > b.metersToBoardingStop ? a : b,
-      );
-      expect(option.metersToBoardingStop, greaterThan(arrivalRadiusMeters));
+        // A propósito una parada lejos del punto de partida: la mejor opción suele ser la
+        // Catedral, que es donde el usuario ya está, y ahí ya habría "llegado".
+        final option = c
+            .read(tripPlanProvider)
+            .options
+            .reduce(
+              (a, b) => a.metersToBoardingStop > b.metersToBoardingStop ? a : b,
+            );
+        expect(option.metersToBoardingStop, greaterThan(arrivalRadiusMeters));
 
-      notifier.choose(option);
-      notifier.startWalking();
+        notifier.choose(option);
+        notifier.startWalking();
 
-      // Suscribe el provider para que reaccione a los cambios de posición.
-      final sub = c.listen(hasArrivedProvider, (_, _) {});
-      expect(sub.read(), isFalse, reason: 'todavía no ha caminado');
+        // Suscribe el provider para que reaccione a los cambios de posición.
+        final sub = c.listen(hasArrivedProvider, (_, _) {});
+        expect(sub.read(), isFalse, reason: 'todavía no ha caminado');
 
-      // Colocar al usuario encima de la parada equivale a haber llegado.
-      c.read(userLocationProvider.notifier).state =
-          option.boardingStop.location;
-      expect(sub.read(), isTrue);
-    });
+        // Colocar al usuario encima de la parada equivale a haber llegado.
+        c.read(userLocationProvider.notifier).state =
+            option.boardingStop.location;
+        expect(sub.read(), isTrue);
+      },
+    );
 
     test('reiniciar borra el viaje', () async {
       final c = await container();
@@ -291,6 +343,33 @@ void main() {
 
       expect(c.read(tripPlanProvider).stage, TripStage.idle);
       expect(c.read(tripPlanProvider).hasDestination, isFalse);
+    });
+  });
+
+  /// Cuánto falta para que llegue la unidad, tal como se lee en pantalla.
+  ///
+  /// El conductor simulado corre a la velocidad de la demo, así que a la parada casi nunca le
+  /// faltan minutos: le faltan segundos. Un contador que dice "1 min" durante todo el trayecto
+  /// y de pronto desaparece se lee como si estuviera trabado, y lo que se está enseñando es
+  /// justamente que la unidad se acerca.
+  group('el contador de llegada', () {
+    test('abajo del minuto se dice en segundos', () {
+      expect(formatEta(0.2), '12 s');
+    });
+
+    test('nunca dice cero: "llega en 0" se lee como que ya se fue', () {
+      expect(formatEta(0.0001), '1 s');
+    });
+
+    test('a partir del minuto vuelve a los minutos', () {
+      expect(formatEta(1), '1 min');
+      expect(formatEta(3.4), '3 min');
+    });
+
+    test('la distancia se convierte con la velocidad de la demo', () {
+      // Los 1274 m que separan la Catedral del Bosque Cuauhtémoc, que a velocidad de camión
+      // de verdad serían cinco minutos de espera.
+      expect(formatEta(etaMinutesForMeters(1274)), '8 s');
     });
   });
 }

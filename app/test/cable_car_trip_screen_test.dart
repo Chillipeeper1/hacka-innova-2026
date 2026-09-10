@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/cable_car_trip.dart';
+import 'package:maas_morelia/data/providers.dart';
 import 'package:maas_morelia/screens/cable_car_trip_screen.dart';
 import 'package:maas_morelia/theme.dart';
+
+import 'support/fakes.dart';
 
 /// La pantalla del viaje en teleférico.
 ///
@@ -18,7 +21,11 @@ void main() {
 
   late ProviderContainer container;
 
-  setUp(() => container = ProviderContainer());
+  setUp(
+    () => container = ProviderContainer(
+      overrides: [reverseGeocoderProvider.overrideWithValue(FakeGeocoder())],
+    ),
+  );
 
   /// Apaga el timer del viaje simulado.
   ///
@@ -113,10 +120,7 @@ void main() {
     expectNoLayoutError(tester, 'estación de subida');
 
     expect(find.text('Subes en Estación Centro'), findsOneWidget);
-    expect(
-      find.textContaining('La estación más cercana a ti'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('La estación más cercana a ti'), findsOneWidget);
     stopTrip();
   });
 

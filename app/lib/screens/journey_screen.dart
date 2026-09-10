@@ -3,20 +3,32 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../data/journey.dart';
+import '../data/models.dart';
+import '../data/providers.dart';
 import '../data/journey_trip.dart';
+import '../data/nearby_ads.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
+import '../widgets/panic_button.dart';
+import '../widgets/sponsored_places.dart';
 import '../widgets/trip_widgets.dart';
 
-/// El viaje más rápido: varios modos encadenados para llegar antes.
+/// El viaje personalizado: el usuario elige los medios y el servidor arma el mejor recorrido
+/// con esos.
 ///
 /// El itinerario lo arma el servidor (`GET /journeys`), así que esta pantalla no decide nada
-/// sobre la ruta — la enseña, la recorre y deja cambiar de alternativa. Es la única del viaje
-/// que espera a la red, y por eso es la única con estado de carga.
+/// sobre la ruta — la enseña, la recorre, y deja cambiar los medios para volver a pedirla. Es
+/// la única del viaje que espera a la red, y por eso la única con estado de carga.
+///
+/// Llega en dos tiempos: primero la propuesta quieta —el trazado en el mapa y el itinerario en
+/// la hoja, con los chips de medios y las alternativas— y solo al tocar "Iniciar viaje" el
+/// pasajero se pone en marcha. Antes arrancaba sola al recibir la respuesta, con lo que el
+/// viaje ya iba corriendo mientras el usuario todavía estaba decidiendo con qué quería ir.
 class JourneyScreen extends ConsumerWidget {
   const JourneyScreen({
     super.key,
@@ -37,8 +49,9 @@ class JourneyScreen extends ConsumerWidget {
 
     if (trip.stage == JourneyStage.loading) {
       return const _JourneyMessage(
-        title: 'Buscando la ruta más rápida',
-        detail: 'Estamos combinando camión, teleférico y caminata.',
+        title: 'Armando tu viaje',
+        detail:
+            'Estamos buscando la mejor combinación para llegar a tu destino.',
         busy: true,
       );
     }
@@ -59,13 +72,18 @@ class JourneyScreen extends ConsumerWidget {
       );
     }
 
-    final arrived = trip.stage == JourneyStage.arrived;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          _JourneyMap(trip: trip, journey: journey),
+          _JourneyMap(
+            trip: trip,
+            journey: journey,
+            // Las paradas intermedias vienen de `/routes`: son las que la unidad sirve de
+            // verdad entre subida y bajada, y sin ellas el trazado seria una recta que cruza
+            // por donde el camión no pasa.
+            routes: ref.watch(routesProvider).value ?? const [],
+          ),
           LayoutBuilder(
             builder: (context, constraints) {
               final width = math.min(constraints.maxWidth, maxContentWidth);
@@ -76,18 +94,11 @@ class JourneyScreen extends ConsumerWidget {
                     width: width,
                     onMenu: onMenu,
                     onProfile: onProfile,
-                    trailing: MapInfoCard(
-                      width: width,
-                      asset: _modeAsset(
-                        trip.currentLeg?.mode ?? JourneyMode.walk,
-                      ),
-                      lines: [
-                        arrived ? 'Llegaste a:' : 'Vas en:',
-                        arrived
-                            ? 'tu destino'
-                            : (trip.currentLeg?.title ?? journey.label),
-                      ],
-                    ),
+                    // Solo con el viaje en marcha: mientras se elige el itinerario todavía no
+                    // hay viaje del que avisar, y el botón estorbaría a la elección.
+                    panic: trip.stage == JourneyStage.traveling
+                        ? PanicButton(width: width, trip: _panicTrip(trip))
+                        : null,
                   ),
                   Align(
                     alignment: Alignment.bottomCenter,
@@ -98,6 +109,11 @@ class JourneyScreen extends ConsumerWidget {
                       journey: journey,
                       onSelect: (index) =>
                           ref.read(journeyTripProvider.notifier).select(index),
+                      onToggleMode: (mode) => ref
+                          .read(journeyTripProvider.notifier)
+                          .toggleMode(mode),
+                      onStart: () =>
+                          ref.read(journeyTripProvider.notifier).begin(),
                       onFinished: onFinished,
                       onCancel: onCancel,
                     ),
@@ -112,22 +128,26 @@ class JourneyScreen extends ConsumerWidget {
   }
 }
 
-/// Color de cada modo. El mismo criterio que en el resto de la app: azul lo que se camina,
-/// verde la bici, y cada servicio con su color.
-Color _modeColor(JourneyMode mode) => switch (mode) {
-  JourneyMode.walk => AppColors.walkPath,
-  JourneyMode.bike => AppColors.green,
-  JourneyMode.bus => AppColors.magenta,
-  JourneyMode.combi => AppColors.magentaDeep,
-  JourneyMode.cableCar => const Color(0xFF7B2FF7),
-};
+/// En qué va el pasajero, para la alerta de pánico.
+///
+/// Es el único viaje con transbordos, así que lo que ubica no es el itinerario completo sino
+/// **el tramo en curso**: la unidad en la que va ahora es la que habría que buscar, y decir
+/// "iba de la Catedral al Bosque" mandaría a rastrear un viaje que ya cambió de vehículo.
+String _panicTrip(JourneyTrip trip) {
+  final leg = trip.currentLeg;
+  if (leg == null) return 'En un viaje con transbordos, rumbo a su destino';
 
-String _modeAsset(JourneyMode mode) => switch (mode) {
-  JourneyMode.walk => 'assets/icons/walk.svg',
-  JourneyMode.bike => 'assets/icons/bicycle.svg',
-  JourneyMode.bus || JourneyMode.combi => 'assets/icons/bus.svg',
-  JourneyMode.cableCar => 'assets/icons/cable-car.svg',
-};
+  final route = leg.routeName;
+  final destination = leg.to.name;
+  if (route != null) {
+    return destination == null
+        ? 'A bordo de $route'
+        : 'A bordo de $route, hacia $destination';
+  }
+  return destination == null
+      ? '${leg.mode.label}, rumbo a su destino'
+      : '${leg.mode.label}, hacia $destination';
+}
 
 /// Pantalla de una sola cosa: cargando, o algo salió mal.
 class _JourneyMessage extends StatelessWidget {
@@ -224,10 +244,46 @@ class _JourneyMessage extends StatelessWidget {
 
 /// Mapa con cada tramo en el color de su modo.
 class _JourneyMap extends StatelessWidget {
-  const _JourneyMap({required this.trip, required this.journey});
+  const _JourneyMap({
+    required this.trip,
+    required this.journey,
+    required this.routes,
+  });
 
   final JourneyTrip trip;
   final Journey journey;
+  final List<TransitRoute> routes;
+
+  /// Los puntos por los que pasa un tramo.
+  ///
+  /// Lo normal es el trazado por calles que ya trae el servidor (`geometry`), que además pasa
+  /// por las paradas intermedias de la ruta.
+  ///
+  /// Lo de abajo es el respaldo para cuando no viene —OSRM no contestó, o es el teleférico,
+  /// que va por el aire—: seguir las paradas que la ruta sirve entre subida y bajada. Entre
+  /// parada y parada queda recta, pero al menos la línea pasa por donde la unidad para.
+  List<LatLng> _legPoints(JourneyLeg leg) {
+    if (leg.geometry.isNotEmpty) return leg.geometry;
+
+    final directo = [leg.from.location, leg.to.location];
+
+    final routeId = leg.routeId;
+    final fromId = leg.from.stopId;
+    final toId = leg.to.stopId;
+    if (routeId == null || fromId == null || toId == null) return directo;
+
+    final route = routes.where((r) => r.id == routeId).firstOrNull;
+    if (route == null) return directo;
+
+    final desde = route.stops.indexWhere((stop) => stop.id == fromId);
+    final hasta = route.stops.indexWhere((stop) => stop.id == toId);
+    if (desde < 0 || hasta < 0) return directo;
+
+    final paso = desde <= hasta ? 1 : -1;
+    return [
+      for (var i = desde; i != hasta + paso; i += paso) route.stops[i].location,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -242,12 +298,15 @@ class _JourneyMap extends StatelessWidget {
           if (leg.meters > 0)
             MapLine(
               id: 'tramo-$index',
-              points: [leg.from.location, leg.to.location],
-              color: _modeColor(leg.mode),
+              points: _legPoints(leg),
+              color: journeyModeColor(leg.mode),
               width: leg.mode == JourneyMode.walk ? 6 : 8,
             ),
       ],
       markers: [
+        // Al llegar, y solo al llegar: mientras el viaje sigue el mapa es para llegar.
+        if (trip.stage == JourneyStage.arrived && trip.destination != null)
+          ...sponsoredMarkers(context, adsAround(trip.destination!)),
         // Los transbordos: donde hay que bajarse de una cosa y subirse a otra, que es lo
         // único del itinerario que se puede hacer mal.
         for (final (index, leg) in journey.legs.indexed)
@@ -257,7 +316,7 @@ class _JourneyMap extends StatelessWidget {
               point: leg.from.location,
               icon: DotMapIcon(
                 fill: Colors.white,
-                border: _modeColor(leg.mode),
+                border: journeyModeColor(leg.mode),
                 diameter: 18,
               ),
               semanticLabel: 'Transbordo en ${leg.from.name}',
@@ -274,8 +333,10 @@ class _JourneyMap extends StatelessWidget {
             id: 'pasajero',
             point: rider,
             icon: CircledSvgMapIcon(
-              _modeAsset(trip.currentLeg?.mode ?? JourneyMode.walk),
-              border: _modeColor(trip.currentLeg?.mode ?? JourneyMode.walk),
+              journeyModeAsset(trip.currentLeg?.mode ?? JourneyMode.walk),
+              border: journeyModeColor(
+                trip.currentLeg?.mode ?? JourneyMode.walk,
+              ),
             ),
             semanticLabel: 'Vas aquí',
           ),
@@ -292,6 +353,8 @@ class _JourneySheet extends StatelessWidget {
     required this.trip,
     required this.journey,
     required this.onSelect,
+    required this.onToggleMode,
+    required this.onStart,
     this.onFinished,
     this.onCancel,
   });
@@ -301,6 +364,8 @@ class _JourneySheet extends StatelessWidget {
   final JourneyTrip trip;
   final Journey journey;
   final ValueChanged<int> onSelect;
+  final ValueChanged<JourneyMode> onToggleMode;
+  final VoidCallback onStart;
   final VoidCallback? onFinished;
   final VoidCallback? onCancel;
 
@@ -308,12 +373,20 @@ class _JourneySheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = scaleFor(width);
     final arrived = trip.stage == JourneyStage.arrived;
+    final planned = trip.stage == JourneyStage.planned;
     final current = trip.currentLeg;
+
+    // Los que de verdad se pintan abajo: los de duración o distancia cero no son un paso que
+    // el pasajero tenga que dar, y contarlos infla el resumen.
+    final legs = [
+      for (final leg in journey.legs)
+        if (leg.meters > 0 || leg.minutes > 0) leg,
+    ];
 
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.58,
+      maxHeightFactor: 0.66,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -332,20 +405,55 @@ class _JourneySheet extends StatelessWidget {
           SizedBox(height: 12 * s),
           InfoPill(
             width: width,
-            label: arrived
-                ? 'Viaje terminado'
-                : 'Llegas en ${trip.roundedRemaining} min',
+            // Propuesto todavía no es "llegas en": nada está corriendo. Se resume el plan —
+            // cuánto dura y en cuántos pasos— y el reloj empieza al arrancar.
+            label: switch (trip.stage) {
+              JourneyStage.arrived => 'Viaje terminado',
+              JourneyStage.planned =>
+                '${journey.roundedMinutes} min · '
+                    '${legs.length} ${legs.length == 1 ? 'tramo' : 'tramos'}',
+              _ => 'Llegas en ${trip.roundedRemaining} min',
+            },
             background: arrived ? AppColors.green : AppColors.magenta,
+          ),
+          SizedBox(height: 14 * s),
+          // El final del último tramo es el destino del viaje entero. Los tramos de abajo
+          // dicen cómo se llega; esto dice a dónde, que es lo que la tarjeta flotante decía
+          // a medias —nombraba el tramo en curso, no el destino—.
+          if (legs.lastOrNull?.to case final destination?)
+            Padding(
+              padding: EdgeInsets.only(bottom: 14 * s),
+              child: destination.name == null
+                  ? TripDestinationLine.at(
+                      width: width,
+                      label: arrived ? 'Llegaste a' : 'Vas hacia',
+                      point: destination.location,
+                    )
+                  : TripDestinationLine.named(
+                      width: width,
+                      label: arrived ? 'Llegaste a' : 'Vas hacia',
+                      name: destination.name!,
+                      asset: 'assets/icons/pin-dark.svg',
+                    ),
+            ),
+          if (journey.beyondNetwork) ...[
+            _OutOfReachNotice(width: width, journey: journey),
+            SizedBox(height: 14 * s),
+          ],
+          _ModePicker(
+            width: width,
+            selected: trip.modes,
+            onToggle: onToggleMode,
           ),
           SizedBox(height: 12 * s),
 
-          for (final leg in journey.legs)
-            if (leg.meters > 0 || leg.minutes > 0)
-              _LegRow(
-                width: width,
-                leg: leg,
-                active: !arrived && identical(leg, current),
-              ),
+          for (final leg in legs)
+            _LegRow(
+              width: width,
+              leg: leg,
+              // Quieto no hay tramo "en curso": resaltar el primero sugiere que ya va en él.
+              active: !arrived && !planned && identical(leg, current),
+            ),
 
           if (trip.alternatives.length > 1) ...[
             SizedBox(height: 12 * s),
@@ -360,11 +468,94 @@ class _JourneySheet extends StatelessWidget {
               designHeight: 44,
               onPressed: onFinished,
             )
-          else
+          else if (planned) ...[
+            PrimaryPillButton(
+              label: 'Iniciar viaje',
+              width: width,
+              designHeight: 44,
+              onPressed: onStart,
+            ),
+            SizedBox(height: 10 * s),
+            Center(
+              child: CancelPill(width: width, onTap: onCancel),
+            ),
+          ] else
             Center(
               child: CancelPill(width: width, onTap: onCancel),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Aviso de que el destino queda fuera de lo que la red alcanza.
+///
+/// El motor siempre devuelve un viaje —el peor caso es caminar todo el trayecto— y sin decir
+/// nada eso se leía como un itinerario normal: "5 min en bici" seguido de dos horas a pie. El
+/// viaje se sigue enseñando, porque el punto elegido es válido y los números son reales, pero
+/// encabezado por lo que de verdad está pasando: ninguna ruta del catálogo se acerca.
+class _OutOfReachNotice extends StatelessWidget {
+  const _OutOfReachNotice({required this.width, required this.journey});
+
+  final double width;
+  final Journey journey;
+
+  String get _walk {
+    final km = journey.longestWalkMeters / 1000;
+    return km >= 10 ? '${km.round()} km' : '${km.toStringAsFixed(1)} km';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Ninguna ruta llega hasta tu destino: te tocarian $_walk a pie',
+      excludeSemantics: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.crowdBusy.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(AppRadius.floatingCard),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 16 * s, vertical: 12 * s),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.directions_walk, size: 22 * s, color: Colors.black),
+            SizedBox(width: 12 * s),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ninguna ruta llega hasta allá',
+                    style: TextStyle(
+                      fontFamily: AppFonts.button,
+                      fontFamilyFallback: AppFonts.buttonFallback,
+                      fontSize: fluid(width, designSize: 17, min: 14, max: 18),
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  SizedBox(height: 3 * s),
+                  Text(
+                    'El viaje de abajo te deja $_walk a pie de un tirón. '
+                    'Prueba un destino más cerca de una ruta.',
+                    style: TextStyle(
+                      fontSize: fluid(width, designSize: 14, min: 12, max: 15),
+                      height: 1.25,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -381,14 +572,18 @@ class _LegRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = scaleFor(width);
-    final color = _modeColor(leg.mode);
+    final color = journeyModeColor(leg.mode);
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 5 * s),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SvgPicture.asset(_modeAsset(leg.mode), width: 22 * s, height: 22 * s),
+          SvgPicture.asset(
+            journeyModeAsset(leg.mode),
+            width: 22 * s,
+            height: 22 * s,
+          ),
           SizedBox(width: 12 * s),
           Container(
             width: 4 * s,
@@ -494,6 +689,134 @@ class _AlternativeChip extends StatelessWidget {
               fontSize: fluid(width, designSize: 13, min: 11, max: 14),
               fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
               color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Con qué medios acepta ir el usuario.
+///
+/// La pregunta ya se hizo un paso antes, en `TravelModesScreen`: esto es la corrección, para
+/// quien ve el itinerario y decide que hoy sí toma el camión. Se enseña arriba del desglose
+/// porque cambiarla cambia el itinerario entero, no solo lo reordena — y por eso devuelve el
+/// viaje a la propuesta en vez de seguir corriendo sobre uno distinto.
+class _ModePicker extends StatelessWidget {
+  const _ModePicker({
+    required this.width,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  final double width;
+  final Set<JourneyMode> selected;
+  final ValueChanged<JourneyMode> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Medios que aceptas',
+          style: TextStyle(
+            fontSize: fluid(width, designSize: 13, min: 11, max: 14),
+            color: AppColors.muted,
+          ),
+        ),
+        SizedBox(height: 8 * s),
+        Wrap(
+          spacing: 8 * s,
+          runSpacing: 8 * s,
+          children: [
+            for (final mode in JourneyMode.selectable)
+              _ModeChip(
+                width: width,
+                mode: mode,
+                on: selected.contains(mode),
+                onTap: () => onToggle(mode),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({
+    required this.width,
+    required this.mode,
+    required this.on,
+    required this.onTap,
+  });
+
+  final double width;
+  final JourneyMode mode;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = scaleFor(width);
+    final color = journeyModeColor(mode);
+
+    return ConstrainedBox(
+      // Dentro de un Wrap el ancho es libre, así que sin tope el chip crece hasta desbordar
+      // cuando el sistema pide tipografía grande. Con tope, el texto se acomoda en dos líneas.
+      constraints: BoxConstraints(maxWidth: width),
+      child: Semantics(
+        container: true,
+        selected: on,
+        button: true,
+        label: '${mode.label}, ${on ? 'incluido' : 'excluido'}',
+        child: Material(
+          color: on ? color.withValues(alpha: 0.14) : AppColors.field,
+          shape: StadiumBorder(
+            side: BorderSide(
+              color: on ? color : AppColors.surfaceGrey,
+              width: on ? 2 : 1,
+            ),
+          ),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 14 * s,
+                vertical: 9 * s,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SvgPicture.asset(
+                    journeyModeAsset(mode),
+                    width: 18 * s,
+                    height: 18 * s,
+                  ),
+                  SizedBox(width: 8 * s),
+                  Flexible(
+                    child: Text(
+                      mode.label,
+                      maxLines: 2,
+                      style: TextStyle(
+                        fontSize: fluid(
+                          width,
+                          designSize: 13,
+                          min: 11,
+                          max: 14,
+                        ),
+                        fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+                        color: on ? Colors.black : AppColors.muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

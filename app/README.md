@@ -121,9 +121,86 @@ acaba dentro del HTML y se ve en el código fuente de la página. Tenerla fuera 
 quede en el historial y que se la lleve quien clone el repo, pero lo que de verdad la protege es
 **restringirla por referente HTTP** en la consola de Google Cloud — para la demo, `localhost:8080`.
 
-Para Android hace falta además la clave en `android/app/src/main/AndroidManifest.xml`, y para
-iOS en `ios/Runner/AppDelegate.swift`; hoy solo está cableado el lado web, que es donde corre la
-demo.
+En Android la clave sale del **mismo `.env`**: `android/app/build.gradle.kts` lo lee y la inyecta
+en el manifest como `manifestPlaceholder`, porque `AndroidManifest.xml` sí está en git y no
+puede llevarla escrita. Lo que no se hereda es el permiso: una clave restringida por referente
+HTTP **no funciona en Android**. Hay que habilitar *Maps SDK for Android* en Google Cloud y
+darle a la clave una restricción de aplicación Android — paquete `mx.maasmorelia.maas_morelia`
+más la huella SHA-1 del keystore de debug. En iOS sigue sin cablear
+(`ios/Runner/AppDelegate.swift`).
+
+## Direcciones: Nominatim, llamado desde la app
+
+La pantalla de destino enseña una dirección de calle —"Calle Antonio Alzate 805, Morelia"— y no
+las coordenadas del pin. Quien las traduce es **Nominatim**, el buscador de OpenStreetMap, y la
+app lo consulta **directo**, sin pasar por `server/`: el contrato de API de `CLAUDE.md` no tiene
+un endpoint de geocodificación y agregarlo es trabajo del equipo de backend. Es el mismo trato
+que ya tienen los mapas —un servicio externo que el cliente pide por su cuenta— y deja esta
+pantalla funcionando aunque el backend esté apagado.
+
+No hace falta clave ni configuración: funciona tal cual. Dos cosas que sí importan:
+
+- **Una petición por segundo** es el tope que pide la política de uso del servicio público. Se
+  respeta esperando a que el mapa se quede quieto (600 ms sin movimiento de cámara) y con un
+  caché por punto redondeado a ~11 m, así que un arrastre entero cuesta una sola consulta.
+- **Para producción hay que hospedar la instancia propia** y apuntar ahí con
+  `--dart-define=NOMINATIM_URL=https://...`. El servicio público no está pensado para el tráfico
+  de una app en la calle.
+
+Si no contesta —sin red, servicio caído, o un punto que no reconoce— el campo cae a las
+coordenadas del pin. El destino elegido sigue siendo válido y confirmarlo funciona igual.
+
+El botón cuadrado de la esquina inferior derecha devuelve la cámara —y con ella el pin— a donde
+está el pasajero. Esa ubicación sale de `userLocationProvider`, la **simulada** que ya usan el
+planeador de viaje y el peatón que camina a la parada: no es GPS real, así que el botón se
+comporta igual con o sin permisos concedidos. Ver el pendiente de abajo.
+
+## Guion de demo: qué destino poner y qué parada agarrar
+
+Con `demo-drive` a sus valores por omisión. Los números salen de medir el recorrido simulado
+contra los providers de la app, no de estimar.
+
+### Flujo de camión (Escenarios 2 a 7)
+
+**Destino: el Acueducto — `19.6975, -101.1791`. Parada de subida: Fuente de las Tarascas.**
+
+Es la combinación más robusta, por tres razones medidas:
+
+| Parada de subida | Espera promedio | Peor caso | 95% bajo |
+|---|---|---|---|
+| **Fuente de las Tarascas** (ruta 1) | **18 s** | **84 s** | **75 s** |
+| Catedral (ruta 1) | 55 s | 128 s | 118 s |
+| Acueducto (ruta 1) | 47 s | 128 s | 122 s |
+| Catedral o Bosque (ruta 2) | 74–86 s | 189 s | ~180 s |
+
+Las Tarascas es la parada de **en medio** de la ruta 1, así que la unidad pasa por ahí dos veces
+por ciclo — de ida y de vuelta. Las paradas de los extremos solo la ven una vez.
+
+Además, subir ahí obliga a caminar 614 m, que son ~25 s de caminata simulada: ese rato es justo
+el que se necesita para navegar las pantallas, así que se llega a la parada con la unidad
+todavía en camino en vez de verla irse. Subiendo en la Catedral no hay caminata, la unidad está
+ahí desde el arranque y solo se detiene 9 s — si se tarda uno en tocar, ya se fue.
+
+El viaje dura 29 s y deja en el destino exacto. Para ver además el tramo final a pie y el aviso
+de "te deja a 300 m", poner el destino 300 m al sur: `19.6948, -101.1791`.
+
+### Viaje personalizado con transbordo (Escenario 8)
+
+**Destino: Central de Autobuses — `19.687, -101.162`, y apagar la bici en el selector de modos.**
+
+Es el único destino del seed que produce un transbordo real: camión de la Catedral al Bosque
+Cuauhtémoc, y ahí teleférico hasta la Central. 19.1 min, que a 20x
+(`journeyDemoSpeedFactor`) se recorren en ~57 s.
+
+Con la bici encendida gana "Más rápida" = bici directa, 11.2 min sin transbordos. Sirve para
+enseñar la comparación entre alternativas, pero no el transbordo.
+
+### Qué evitar
+
+- **Destinos al oeste o al sur del centro.** El seed solo tiene rutas hacia el este/noreste, así
+  que ahí no hay transporte y sale el aviso de "Ninguna ruta llega hasta allá". Es correcto,
+  pero no demuestra nada.
+- **Charo Centro** (`19.7386, -101.1041`). Funciona, pero son 40.6 min de viaje.
 
 ## Correrlo con el backend
 
@@ -131,12 +208,69 @@ demo.
 # terminal 1
 cd ../server && npm install && npm run dev
 
-# terminal 2 — el conductor simulado, para ver la unidad moverse
-cd ../server && npm run simulate
+# terminal 2 — el conductor simulado, para ver la unidad acercarse
+cd ../server && npm run demo-drive
 
 # terminal 3
-cd ../app && flutter run -d chrome
+cd ../app && flutter run -d chrome --web-port=8080
 ```
+
+**Ojo con cuál de los dos simuladores se corre.** `npm run demo-drive` emite una posición cada
+100 ms interpolando sobre el tramo, y al llegar al final da la vuelta: la unidad se ve avanzar.
+`npm run simulate` hace otra cosa a propósito —lo dice `server/README.md`—: emite las
+coordenadas de una parada cada 3 segundos y vuelve a empezar con `index % stops.length`. En el
+mapa eso es la unidad teletransportándose entre paradas, con un salto **hacia atrás** de 665 m
+al cerrar el ciclo en la Ruta Centro - Acueducto, y un ida y vuelta de 1274 m cada 3 segundos en
+la Ruta Centro - Bosque, que solo tiene dos paradas. Se ve como si el icono del camión estuviera
+roto, y no lo está: la app dibuja exactamente la posición que recibe. `simulate` sirve para
+probar rápido que el evento llega; para ver el mapa, `demo-drive`.
+
+**Si el icono salta y `demo-drive` es el que corre**, casi seguro el proceso lleva horas vivo
+mientras el servidor se reinició varias veces (`tsx watch` reinicia a cada cambio de archivo).
+Los dos simuladores registraban su bucle dentro de `socket.on("connect")`, que se vuelve a
+disparar en **cada reconexión**: cada reinicio del servidor dejaba un conductor más recorriendo
+la misma ruta con su propio avance, todos emitiendo para el mismo `vehicle_id`. Ya está
+corregido —el bucle se apaga al desconectar— pero un proceso viejo sigue con los conductores que
+acumuló: ciérralo y vuelve a abrirlo. Para comprobarlo, la unidad debe reportar **2 posiciones
+por segundo**; si son 8 o 24, hay 4 o 12 conductores encima.
+
+**La unidad recorre la línea que dibuja la app**, no una recta entre paradas. `demo-drive` pide
+el trazado al mismo `GET /routes` que consume el cliente y avanza sobre esa polilínea. Antes
+interpolaba en recta de parada a parada, y como la línea del mapa sigue las calles, el camión se
+veía cruzando manzanas por fuera de su propia ruta: hasta 143 m fuera en la Ruta Centro -
+Acueducto, 415 m en la Centro - Bosque y 1033 m en la Salida a Charo, que es la que más rodea.
+El teleférico sigue en recta entre estaciones, que es lo correcto: va por el aire y su `shape`
+viene vacío.
+
+**Cuánto tarda la demo.** La tabla de abajo está **medida con los valores de entonces** (45
+km/h, 9 s detenido en cada parada) y el destino junto al Acueducto. Hoy `demo-drive` viene a
+600 km/h y 5 s por parada —calibrado para presentar contra reloj, ver el comentario del script—
+así que los tiempos de trayecto salen unas trece veces más cortos y cada parada intermedia
+suma 5 s en vez de 9. Lo que la tabla sigue diciendo es lo que importa: **la diferencia entre
+las tres opciones**, que no cambia al mover la velocidad.
+
+| Opción | Pide la tarjeta a los | Dura el viaje |
+|---|---|---|
+| Subir en **Catedral**, bajar en Acueducto (665 m) | 0 s — la unidad arranca ahí | 75 s |
+| Subir en Fuente de las Tarascas, bajar en Acueducto (157 m) | 46 s | 29 s |
+| Subir en Bosque Cuauhtémoc, bajar en Catedral (1274 m) | ~90 s | ~100 s |
+
+Para enseñar el flujo completo conviene la primera. Las otras dos se sienten rotas por dos
+motivos que no son un fallo de la app: la ventana de pago no aparece hasta que la unidad está a
+150 m de la parada (`busApproachingMeters`), y el viaje termina solo en cuanto la unidad entra
+en los 60 m de la parada de bajada (`alightingRadiusMeters`) — con tramos de 157 m eso pasa
+enseguida. `SPEED_KMH` y `DWELL_MS` de `demo-drive` mueven ambos tiempos: `SPEED_KMH=150
+DWELL_MS=9000 npm run demo-drive` devuelve el ritmo anterior si hace falta más aire para
+explicar.
+
+`--web-port=8080` no es opcional: la clave de Maps esta restringida a ese
+puerto (ver arriba) y `flutter run -d chrome` a secas elige uno al azar, con
+lo que el mapa falla con `RefererNotAllowedMapError`.
+
+Correrlo asi, en modo debug, tambien evita el service worker: un
+`flutter build web` servido como estatico registra uno, y entonces los
+cambios no se ven hasta desregistrarlo a mano en DevTools (Application ->
+Service Workers -> Unregister) por mucho que se recompile.
 
 Con otra dirección de backend:
 
@@ -146,6 +280,35 @@ flutter run \
   --dart-define=API_BASE_URL=http://10.0.2.2:3001 \
   --dart-define=REALTIME_URL=http://10.0.2.2:3001
 ```
+
+## En un celular físico Android
+
+```
+powershell -ExecutionPolicy Bypass -File tool/run-device.ps1
+```
+
+El script busca la IP de esta máquina en la red local y la pasa por `--dart-define`. Es lo único
+que distingue esta corrida de la de web: el celular no puede usar `localhost` —ese es él mismo—
+ni `10.0.2.2`, que solo existe dentro del emulador. Si la detección elige la interfaz equivocada
+(VPN, Docker, WSL), pásale la buena: `-HostIp 192.168.1.50`.
+
+Del lado del celular: depuración USB activada en Opciones de desarrollador, cable conectado y
+aceptar el diálogo *"¿Permitir depuración USB?"* que sale al enchufarlo. `flutter devices` tiene
+que listarlo antes de intentar nada.
+
+Tres cosas tienen que estar en su sitio, y fallan de formas distintas:
+
+| Síntoma | Causa |
+|---|---|
+| El mapa sale en blanco, el resto funciona | La clave de Maps (ver arriba): falta habilitar el SDK de Android, o la restricción sigue siendo de referente HTTP |
+| No cargan rutas ni paradas, lo demás pinta | El celular no alcanza el backend: otra Wi-Fi, o el firewall de Windows bloqueando el 3001 |
+| La app ni siquiera abre | El dispositivo no está autorizado — `adb devices` lo muestra como `unauthorized` |
+
+El backend ya escucha en todas las interfaces, así que no hay que tocarlo; la primera vez
+Windows pregunta si deja entrar conexiones a Node y hay que decir que sí en la red privada.
+
+Para **proyectar** el celular en una pantalla durante la demo, `scrcpy` lo espeja por USB sin
+instalar nada en el teléfono.
 
 El panel institucional (`../dashboard/index.html`) lee el mismo servidor: al confirmar
 "Voy a abordar" en la app, su contador sube en vivo.
@@ -161,9 +324,11 @@ lib/
 │   ├── models.dart              contrato de server/ traducido a Dart
 │   ├── api_client.dart          REST
 │   ├── realtime_client.dart     socket.io (vehicle:position, demand:update)
+│   ├── geocoder.dart            coordenadas → dirección (Nominatim)
 │   └── providers.dart           cableado con Riverpod
 ├── screens/                     una por pantalla del diseño
 └── widgets/
+    ├── address_text.dart        la dirección de un punto, con su respaldo
     ├── branding.dart            marca, enlace entre pantallas, botones circulares
     ├── inputs.dart              campos píldora, contraseña con ojo, fecha, CTA
     ├── auth_scaffold.dart       andamiaje común de registro e inicio de sesión
@@ -172,7 +337,7 @@ lib/
 assets/
 ├── images/login-morelia.png     fondo de la pantalla inicial
 └── icons/                       google, apple, chevron, calendario, ojo, menú,
-                                 perfil, camión, bici, caminata, pin
+                                 perfil, camión, bici, caminata, pin, mi ubicación
 ```
 
 Los assets se exportaron de Figma y viven en el repo: las URLs que entrega Figma caducan a los
@@ -250,12 +415,23 @@ rápido a esa escala. Para que la demo luzca el transbordo en vez de la
 bici, usen la ruta larga a Charo (o cualquier origen/destino a más de 6 km)
 o pasen `modes` sin `bike`. Nota completa en `server/README.md`.
 
-**Aviso de consistencia**: `averageBusSpeedKmh = 15` en `trip_plan.dart` ya
-no es universal — el servidor ahora usa una velocidad por modo
-(`speedForMode` en `server/src/lib/speeds.ts`): combi/bus siguen en 15 km/h,
-pero teleférico va a 20 km/h. Si la app sigue usando el número fijo para
-calcular el ETA de un tramo de teleférico, va a mostrar un tiempo distinto
-al que calcula `/stops/:id/eta` o `/journeys` para ese mismo tramo.
+**Dos velocidades, a propósito.** Lo que falta para que llegue la unidad se
+cuenta con `etaSpeedKmh` (`trip_plan.dart`), que es la del conductor simulado
+—600 km/h, misma que `DEMO_VEHICLE_SPEED_KMH` en `server/src/lib/speeds.ts` y
+que `SPEED_KMH` en `demo-drive`—: el contador tiene que cuadrar con la unidad
+que se ve avanzar en el mapa, y a 15 km/h anunciaría cinco minutos para algo
+que llega en ocho segundos. Como casi siempre falta menos de un minuto, se
+muestra en segundos (`formatEta`).
+
+Los minutos del **itinerario** no pasan por ahí: los calcula el servidor con
+la velocidad real por modo (`speedForMode`: 15 km/h combi/bus, 20 el
+teleférico) y siguen siendo los de un camión de verdad, que es lo que el
+producto promete. `averageBusSpeedKmh = 15` en `trip_plan.dart` queda como esa
+referencia real —la que compara `bike_network.dart`—, no como el ETA.
+
+Si se baja la velocidad de la demo hay que bajarla en los tres lados o
+volverán a contradecirse: `SPEED_KMH=150` en el servidor **y** en
+`demo-drive`, y `--dart-define=ETA_SPEED_KMH=150` en la app.
 
 ## Pendientes conocidos
 
@@ -265,6 +441,11 @@ al que calcula `/stops/:id/eta` o `/journeys` para ese mismo tramo.
   de `AppFonts` resuelven solas sin tocar las pantallas.
 - **Registro e inicio de sesión no crean cuentas.** La señal de abordaje usa un usuario demo
   creado al vuelo (`POST /users`), como permite `CLAUDE.md` en esta fase.
+- **La ubicación del pasajero es simulada.** `userLocationProvider` arranca fija en la Catedral
+  y solo se mueve cuando la demo lo hace caminar a la parada. Cablear el GPS real es meter
+  `geolocator`, los permisos de Android e iOS, y el aviso de privacidad conforme a LFPDPPP antes
+  de recolectar ubicación — nada de eso está hoy. Lo que sí queda listo es el punto de entrada:
+  todo lo que pregunta "dónde está el usuario" pasa por ese provider.
 - **Modo conductor (Escenario 3).** Hoy la unidad la mueve el script `server/npm run simulate`;
   falta la pantalla que emita `driver:position` desde el teléfono.
 - **Reporte de incidencias.** `POST /incidents` existe en el contrato y la pantalla de
@@ -281,6 +462,35 @@ al que calcula `/stops/:id/eta` o `/journeys` para ese mismo tramo.
 
 ## Diferencias deliberadas contra el Figma
 
+- **La tarjeta flotante de "Vas hacia la parada: ..."** que el Figma pone bajo los controles
+  del mapa ya no existe. Tapaba justo el tramo de mapa por el que se va a pasar, y lo que decía
+  es información de referencia —se consulta una vez, no se vigila—, así que vive en la hoja
+  blanca de abajo, junto al tiempo y los tramos. Se quitó de las ocho pantallas que la usaban;
+  en las dos que ya repetían el dato (`confirm_stop`, y `walk_navigation` al llegar) solo se
+  borró. Las hojas crecieron un poco de alto para acomodarlo.
+- **El inicio lista cuatro opciones de viaje, no dos.** El Figma (nodo `17:284`) pone "Viajar en
+  bici..." y "Viajar caminando..." con aire de sobra en una hoja de 212 px de 874 (24%). La app
+  tiene además el viaje personalizado y el teleférico, así que los renglones van apretados
+  (`TravelOptionTile.dense`) y la hoja se topa: 39-40% en un teléfono normal, hasta 52% en uno
+  corto, donde las mismas cuatro opciones ocupan una fracción mayor. Medido: las cuatro caben
+  sin rodar la hoja en 320x568, 360x640, 402x874 y 430x932, y el mapa conserva entre 51% y 62%
+  de la pantalla.
+- **El mapa del inicio dibuja la red.** El diseño lo enseña como fondo; aquí además se pintan las
+  cuatro rutas con su trazado por calles, sus paradas en el color de cada ruta y la posición del
+  pasajero. Sin eso el mapa del inicio no responde a nada —fue la razón por la que en su momento
+  se cambió por un menú plano sin mapa— y con eso se ve qué cubre el sistema antes de pedirle
+  nada.
+- El botón de **"mi ubicación"** de la pantalla de destino no está en el Figma. Se agregó
+  porque elegir destino sin manera de volver a encuadrarse obliga a arrastrar el mapa a ciegas.
+  Usa el mismo `SquareIconButton` verde que los controles de arriba; su icono (`my-location.svg`)
+  se dibujó a mano al estilo de los exportados, no salió de Figma.
+- **Las paradas llevan una etiqueta de servicio** ("Combi", "Camión", "Teleférico") que el
+  Figma no tiene. Hacía falta porque la combi y el camión **comparten icono** —no hay un trazo
+  propio en el set del diseño— así que sin texto dos paradas de servicios distintos se ven
+  idénticas y no hay forma de saber qué va a llegar. Sale en las tres pantallas donde importa:
+  elegir parada, confirmarla, y esperar la unidad. El color es el de la ruta al 22% de fondo con
+  el texto en negro: usar el color de la ruta como texto no funciona —el ámbar `#D19B3D` sobre
+  blanco da 2.5:1, por debajo del 4.5:1 de WCAG AA— y sobre un tinte claro el negro sí se lee.
 - El botón de la pantalla de registro dice **"Registrarse"**; en el diseño dice "Entrar",
   heredado de la pantalla inicial.
 - El campo de correo de inicio de sesión usa el marcador **"Escribe tu correo..."**; en el

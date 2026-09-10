@@ -99,10 +99,19 @@ class WalkRoute {
     required this.directMeters,
     required this.zonesOnDirectPath,
     required this.crossesUnsafeZone,
+    required this.plannedMeters,
   });
 
   final List<LatLng> points;
   final double totalMeters;
+
+  /// Lo que medía el camino antes de ajustarlo a las calles.
+  ///
+  /// Existe para que el rodeo se siga midiendo contra lo que costó **esquivar la zona**, y no
+  /// contra el zigzag normal de las manzanas: por calles cualquier camino es más largo que la
+  /// recta, y sin esto "rodea 300 m" pasaría a decir cifras que no tienen que ver con las
+  /// zonas. Sin ajuste a calles vale lo mismo que [totalMeters].
+  final double plannedMeters;
 
   /// Lo que habría medido irse en línea recta. Es la referencia del rodeo.
   final double directMeters;
@@ -120,11 +129,49 @@ class WalkRoute {
   bool get detoured => zonesOnDirectPath.isNotEmpty && !crossesUnsafeZone;
 
   /// Cuánto costó el rodeo. Es el precio de la seguridad, y conviene enseñarlo.
-  double get extraMeters => math.max(0, totalMeters - directMeters);
+  double get extraMeters => math.max(0, plannedMeters - directMeters);
 
   int get minutes => minutesOnFoot(totalMeters);
 
   LatLng pointAt(double meters) => pointAlongPath(points, meters);
+
+  /// El mismo camino, ajustado a las calles reales.
+  ///
+  /// Rechaza el ajuste si el trazado por calles cruzara una zona que este camino sí esquivaba:
+  /// la promesa de esta pantalla es no pasar por ellas, y eso pesa más que verse bonito. En
+  /// ese caso se queda el trazado de antes, recto pero limpio.
+  WalkRoute onRoads(List<LatLng> road, List<UnsafeZone> zones) {
+    if (road.length < 2) return this;
+    if (!crossesUnsafeZone && pathCrossesZones(road, zones)) return this;
+
+    return WalkRoute(
+      points: road,
+      totalMeters: pathLengthMeters(road),
+      directMeters: directMeters,
+      zonesOnDirectPath: zonesOnDirectPath,
+      crossesUnsafeZone: crossesUnsafeZone,
+      plannedMeters: plannedMeters,
+    );
+  }
+}
+
+/// Si alguna parte de [path] entra en alguna de [zones].
+///
+/// Mismo criterio que usa el trazador al decidir por dónde puede pasar: se ignoran las zonas
+/// que contienen un extremo del segmento, porque si el origen o el destino caen dentro de una,
+/// lo útil es salir, no negarse a mover el pie.
+bool pathCrossesZones(List<LatLng> path, List<UnsafeZone> zones) {
+  for (var i = 0; i < path.length - 1; i++) {
+    final a = path[i];
+    final b = path[i + 1];
+    for (final zone in zones) {
+      if (zone.contains(a) || zone.contains(b)) continue;
+      if (pointToSegmentMeters(zone.center, a, b) < zone.radiusMeters) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /// Traza un camino a pie de [origin] a [destination] esquivando las zonas marcadas.
@@ -167,6 +214,7 @@ WalkRoute planWalkRoute({
     return WalkRoute(
       points: [origin, destination],
       totalMeters: directMeters,
+      plannedMeters: directMeters,
       directMeters: directMeters,
       zonesOnDirectPath: onDirectPath,
       crossesUnsafeZone: onDirectPath.isNotEmpty,
@@ -224,6 +272,7 @@ WalkRoute planWalkRoute({
     return WalkRoute(
       points: [origin, destination],
       totalMeters: directMeters,
+      plannedMeters: directMeters,
       directMeters: directMeters,
       zonesOnDirectPath: onDirectPath,
       crossesUnsafeZone: true,
@@ -240,6 +289,7 @@ WalkRoute planWalkRoute({
   return WalkRoute(
     points: points,
     totalMeters: pathLengthMeters(points),
+    plannedMeters: pathLengthMeters(points),
     directMeters: directMeters,
     zonesOnDirectPath: onDirectPath,
     crossesUnsafeZone: false,

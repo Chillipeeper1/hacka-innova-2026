@@ -2,14 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../data/walk_route.dart';
+import '../data/nearby_ads.dart';
 import '../data/walk_trip.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
+import '../widgets/panic_button.dart';
+import '../widgets/sponsored_places.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Viaje a pie, de punta a punta en una sola pantalla.
@@ -48,8 +50,6 @@ class WalkTripScreen extends ConsumerWidget {
       );
     }
 
-    final arrived = trip.stage == WalkStage.arrived;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -65,13 +65,11 @@ class WalkTripScreen extends ConsumerWidget {
                     width: width,
                     onMenu: onMenu,
                     onProfile: onProfile,
-                    trailing: MapInfoCard(
+                    // La pantalla que ya rodea zonas marcadas es la que más necesita esto:
+                    // rodearlas reduce el riesgo, no lo quita.
+                    panic: PanicButton(
                       width: width,
-                      asset: 'assets/icons/walk.svg',
-                      lines: [
-                        arrived ? 'Llegaste a:' : 'Vas hacia:',
-                        _formatPoint(trip.destination),
-                      ],
+                      trip: 'A pie, rumbo a su destino',
                     ),
                   ),
                   Align(
@@ -93,12 +91,6 @@ class WalkTripScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-String _formatPoint(LatLng? point) {
-  if (point == null) return 'tu destino';
-  return '${point.latitude.toStringAsFixed(5)}, '
-      '${point.longitude.toStringAsFixed(5)}';
 }
 
 /// Mapa con las zonas marcadas, el camino y quien camina.
@@ -137,6 +129,9 @@ class _WalkTripMap extends StatelessWidget {
         ),
       ],
       markers: [
+        // Al llegar, y solo al llegar: mientras el viaje sigue el mapa es para llegar.
+        if (trip.stage == WalkStage.arrived && trip.destination != null)
+          ...sponsoredMarkers(context, adsAround(trip.destination!)),
         for (final (index, zone) in moreliaUnsafeZones.indexed)
           MapMarker(
             id: 'etiqueta-zona-$index',
@@ -196,7 +191,7 @@ class _WalkTripSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.5,
+      maxHeightFactor: 0.58,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -220,7 +215,16 @@ class _WalkTripSheet extends StatelessWidget {
                 : 'Tiempo estimado: ${trip.remainingMinutes} min',
             background: arrived ? AppColors.green : AppColors.magenta,
           ),
-          SizedBox(height: 12 * s),
+          SizedBox(height: 14 * s),
+          if (trip.destination case final destination?) ...[
+            TripDestinationLine.at(
+              width: width,
+              label: arrived ? 'Llegaste a' : 'Vas hacia',
+              point: destination,
+              asset: 'assets/icons/walk.svg',
+            ),
+            SizedBox(height: 14 * s),
+          ],
           _SafetySummary(width: width, route: route),
           SizedBox(height: 16 * s),
           if (arrived)

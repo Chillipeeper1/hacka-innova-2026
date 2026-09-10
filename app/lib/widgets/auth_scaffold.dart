@@ -138,7 +138,7 @@ class _Header extends StatelessWidget {
           iconRatio: 0.47,
           onTap: onBack ?? () => Navigator.maybePop(context),
         ),
-        MtappWordmark(width: width, color: Colors.black),
+        MtappLogo(diameter: 60 * s),
       ],
     );
   }

@@ -3,14 +3,16 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../data/cable_car_network.dart';
+import '../data/nearby_ads.dart';
 import '../data/cable_car_trip.dart';
 import '../morelia.dart';
 import '../theme.dart';
 import '../widgets/app_map.dart';
 import '../widgets/inputs.dart';
+import '../widgets/panic_button.dart';
+import '../widgets/sponsored_places.dart';
 import '../widgets/trip_widgets.dart';
 
 /// Viaje en teleférico.
@@ -53,8 +55,6 @@ class CableCarTripScreen extends ConsumerWidget {
       );
     }
 
-    final arrived = trip.stage == CableStage.arrived;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -70,13 +70,11 @@ class CableCarTripScreen extends ConsumerWidget {
                     width: width,
                     onMenu: onMenu,
                     onProfile: onProfile,
-                    trailing: MapInfoCard(
+                    panic: PanicButton(
                       width: width,
-                      asset: 'assets/icons/cable-car.svg',
-                      lines: [
-                        arrived ? 'Llegaste a:' : 'Vas hacia:',
-                        _formatPoint(trip.destination),
-                      ],
+                      trip:
+                          '${plan.line.name}, hacia la estación '
+                          '${plan.alighting.name}',
                     ),
                   ),
                   Align(
@@ -98,12 +96,6 @@ class CableCarTripScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-String _formatPoint(LatLng? point) {
-  if (point == null) return 'tu destino';
-  return '${point.latitude.toStringAsFixed(5)}, '
-      '${point.longitude.toStringAsFixed(5)}';
 }
 
 /// Cuando ninguna línea sirve.
@@ -227,6 +219,9 @@ class _CableCarMap extends StatelessWidget {
           ),
       ],
       markers: [
+        // Al llegar, y solo al llegar: mientras el viaje sigue el mapa es para llegar.
+        if (trip.stage == CableStage.arrived && trip.destination != null)
+          ...sponsoredMarkers(context, adsAround(trip.destination!)),
         for (final (index, station) in plan.line.stations.indexed)
           MapMarker(
             id: 'estacion-$index',
@@ -314,7 +309,7 @@ class _CableCarSheet extends StatelessWidget {
     return TripSheet(
       width: width,
       maxHeight: maxHeight,
-      maxHeightFactor: 0.55,
+      maxHeightFactor: 0.72,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -339,6 +334,15 @@ class _CableCarSheet extends StatelessWidget {
             background: arrived ? AppColors.green : AppColors.magenta,
           ),
           SizedBox(height: 14 * s),
+          if (trip.destination case final destination?) ...[
+            TripDestinationLine.at(
+              width: width,
+              label: arrived ? 'Llegaste a' : 'Vas hacia',
+              point: destination,
+              asset: 'assets/icons/cable-car.svg',
+            ),
+            SizedBox(height: 14 * s),
+          ],
           _StationRow(
             width: width,
             color: colorFromHex(plan.line.colorHex),

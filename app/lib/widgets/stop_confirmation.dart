@@ -72,10 +72,9 @@ class StopConfirmation extends StatelessWidget {
             width: width,
             // Sin posición de la unidad no hay estimación, y eso es lo normal antes de que el
             // conductor arranque. Decirlo es mejor que enseñar un número inventado.
-            label:
-                etaMinutes == null
-                    ? 'Llegada estimada: sin datos aún'
-                    : 'Llegada estimada: ${etaMinutes!.round()} min',
+            label: etaMinutes == null
+                ? 'Llegada estimada: sin datos aún'
+                : 'Llegada estimada: ${formatEta(etaMinutes!)}',
             background: AppColors.fieldStrong,
             foreground: Colors.black,
           ),
@@ -87,6 +86,11 @@ class StopConfirmation extends StatelessWidget {
             title: option.boardingStop.name,
             waitingCount: option.waitingCount,
             busy: option.isBusy,
+            badge: ServiceBadge(
+              width: width,
+              mode: option.route.mode,
+              color: colorFromHex(option.route.colorHex),
+            ),
           ),
 
           SizedBox(height: 8 * s),
@@ -99,29 +103,28 @@ class StopConfirmation extends StatelessWidget {
             height: math.max(48 * s, 48),
             child: FilledButton(
               onPressed: busy ? null : onConfirm,
-              child:
-                  busy
-                      ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                      : Text(
-                        actionLabel,
-                        style: TextStyle(
-                          fontFamily: AppFonts.button,
-                          fontFamilyFallback: AppFonts.buttonFallback,
-                          fontSize: fluid(
-                            width,
-                            designSize: 24,
-                            min: 17,
-                            max: 25,
-                          ),
-                          color: Colors.white,
-                        ),
+              child: busy
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
+                    )
+                  : Text(
+                      actionLabel,
+                      style: TextStyle(
+                        fontFamily: AppFonts.button,
+                        fontFamilyFallback: AppFonts.buttonFallback,
+                        fontSize: fluid(
+                          width,
+                          designSize: 24,
+                          min: 17,
+                          max: 25,
+                        ),
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -203,10 +206,9 @@ class _DestinationRow extends StatelessWidget {
                       : 'Te deja a $meters m — vas a caminar un poco',
                   style: TextStyle(
                     fontSize: fluid(width, designSize: 15, min: 12, max: 16),
-                    color:
-                        option.dropsClose
-                            ? AppColors.green
-                            : AppColors.magentaDeep,
+                    color: option.dropsClose
+                        ? AppColors.green
+                        : AppColors.magentaDeep,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

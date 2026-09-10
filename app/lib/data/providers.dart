@@ -6,8 +6,10 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'api_client.dart';
+import 'geocoder.dart';
 import 'models.dart';
 import 'realtime_client.dart';
 
@@ -15,6 +17,26 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   final client = ApiClient(baseUrl: ApiClient.defaultBaseUrl);
   ref.onDispose(client.dispose);
   return client;
+});
+
+/// Quién traduce un punto del mapa a una dirección.
+///
+/// Va aparte de `apiClientProvider` porque no es el backend del proyecto: hoy es Nominatim,
+/// consultado directo desde la app. Las pruebas lo sustituyen por un doble para no salir a la
+/// red, que es la razón de que la pantalla lo pida por aquí y no lo construya.
+final reverseGeocoderProvider = Provider<ReverseGeocoder>((ref) {
+  final geocoder = NominatimGeocoder();
+  ref.onDispose(geocoder.dispose);
+  return geocoder;
+});
+
+/// La dirección de un punto del mapa, o `null` si no se pudo averiguar.
+///
+/// Está indexado por el punto: dos pantallas que preguntan por el mismo destino comparten la
+/// respuesta en vez de consultar dos veces. `LatLng` compara por valor, así que la clave
+/// funciona sin envolverlo en nada.
+final addressProvider = FutureProvider.family<String?, LatLng>((ref, point) {
+  return ref.watch(reverseGeocoderProvider).addressAt(point);
 });
 
 final realtimeClientProvider = Provider<RealtimeClient>((ref) {
@@ -88,14 +110,13 @@ final vehiclePositionsProvider =
 class DemandController extends AsyncNotifier<Map<int, int>> {
   @override
   Future<Map<int, int>> build() async {
-    final subscription = ref
-        .watch(realtimeClientProvider)
-        .demandUpdates
-        .listen((update) {
-          final current = state.value;
-          if (current == null) return;
-          state = AsyncData({...current, update.stopId: update.waitingCount});
-        });
+    final subscription = ref.watch(realtimeClientProvider).demandUpdates.listen(
+      (update) {
+        final current = state.value;
+        if (current == null) return;
+        state = AsyncData({...current, update.stopId: update.waitingCount});
+      },
+    );
     ref.onDispose(subscription.cancel);
 
     final counts = await ref.watch(apiClientProvider).fetchDemand();

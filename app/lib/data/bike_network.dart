@@ -115,6 +115,19 @@ class BikeSegment {
 
   /// Nombre de la ciclovía, cuando [onLane].
   final String? laneName;
+
+  /// El mismo tramo, ajustado a las calles reales.
+  ///
+  /// Solo tiene sentido fuera de ciclovía: los tramos sobre ciclovía ya llevan el trazado
+  /// capturado de la infraestructura real, y sustituirlo por calles de coche los empeoraría.
+  BikeSegment onRoads(List<LatLng> road) => road.length < 2
+      ? this
+      : BikeSegment(
+          points: road,
+          onLane: onLane,
+          meters: pathLengthMeters(road),
+          laneName: laneName,
+        );
 }
 
 /// El recorrido completo en bici, partido en tramos de ciclovía y de calle.
@@ -132,6 +145,19 @@ class BikeRoute {
   final double laneMeters;
 
   double get streetMeters => math.max(0, totalMeters - laneMeters);
+
+  /// El mismo recorrido con los tramos de calle ajustados a las calles reales.
+  ///
+  /// Los metros se recalculan sobre el trazado nuevo: por calles cualquier tramo es más largo
+  /// que la recta que lo generó, y dejar los viejos haría que el ciclista llegara al destino
+  /// con línea todavía por recorrer.
+  BikeRoute withSegments(List<BikeSegment> updated) {
+    final total = updated.fold<double>(0, (sum, s) => sum + s.meters);
+    final lane = updated
+        .where((s) => s.onLane)
+        .fold<double>(0, (sum, s) => sum + s.meters);
+    return BikeRoute(segments: updated, totalMeters: total, laneMeters: lane);
+  }
 
   /// Si el recorrido aprovecha alguna ciclovía.
   ///

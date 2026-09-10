@@ -62,10 +62,6 @@ class ConfirmStopScreen extends ConsumerWidget {
                     onMenu: onMenu,
                     onProfile: onProfile,
                     onBack: onBack ?? () => Navigator.maybePop(context),
-                    trailing: MapInfoCard(
-                      width: width,
-                      lines: ['Vas hacia la parada:', option.boardingStop.name],
-                    ),
                   ),
                   Align(
                     alignment: Alignment.bottomCenter,

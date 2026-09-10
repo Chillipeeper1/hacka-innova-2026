@@ -10,7 +10,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:maas_morelia/data/api_client.dart';
+import 'package:maas_morelia/data/geocoder.dart';
 import 'package:maas_morelia/data/models.dart';
 import 'package:maas_morelia/data/realtime_client.dart';
 
@@ -18,6 +20,8 @@ import 'package:maas_morelia/data/realtime_client.dart';
 const String routesPayload = '''
 [
   {"id":1,"name":"Ruta Centro - Acueducto","mode":"combi","color_hex":"#0E5E56",
+   "shape":[[19.7007,-101.1844],[19.7005,-101.1830],[19.6996,-101.1829],
+            [19.6994,-101.1789],[19.6975,-101.1791]],
    "stops":[
      {"id":1,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844,"sequence":1},
      {"id":2,"name":"Fuente de las Tarascas","lat":19.6989,"lng":-101.1789,"sequence":2},
@@ -36,12 +40,45 @@ const String routesPayload = '''
 const String journeysPayload = '''
 {"alternatives":[{"label":"Más rápida","legs":[{"mode":"bike","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":null,"name":null,"lat":19.6917,"lng":-101.177},"distance_km":1.274,"eta_minutes":5.1}],"total_distance_km":1.274,"total_eta_minutes":5.1},{"label":"Sin bicicleta","legs":[{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":4,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"distance_km":0,"eta_minutes":0},{"mode":"bus","route_id":2,"route_name":"Ruta Centro - Bosque","from":{"stop_id":4,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"to":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"distance_km":1.274,"eta_minutes":8.1},{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"to":{"stop_id":null,"name":null,"lat":19.6917,"lng":-101.177},"distance_km":0,"eta_minutes":0}],"total_distance_km":1.274,"total_eta_minutes":8.1}]}''';
 
+/// Respuesta real de `GET /journeys` con trazado por calles.
+///
+/// De la Catedral al Acueducto pidiendo solo combi. Igual que [journeysPayload], copiada del
+/// servidor corriendo: trae el `geometry` que añade `roadGeometry.ts` — 17 puntos sobre calles
+/// para el tramo de combi, y ninguno para las conexiones a pie de longitud cero, que es
+/// justamente la mezcla que la app tiene que saber dibujar.
+const String journeysWithGeometryPayload = '''
+{"alternatives":[{"label":"Tu selección","legs":[{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":1,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"distance_km":0,"eta_minutes":0},{"mode":"combi","route_id":1,"route_name":"Ruta Centro - Acueducto","from":{"stop_id":1,"name":"Catedral de Morelia","lat":19.7008,"lng":-101.1844},"to":{"stop_id":3,"name":"Acueducto de Morelia","lat":19.6975,"lng":-101.1791},"distance_km":0.665,"eta_minutes":5.7,"geometry":[[19.700687,-101.184399],[19.700693,-101.183859],[19.700626,-101.183136],[19.700559,-101.182126],[19.700539,-101.181798],[19.700529,-101.181648],[19.701044,-101.181555],[19.701907,-101.181404],[19.700463,-101.179804],[19.699847,-101.179121],[19.699334,-101.178553],[19.69929,-101.178504],[19.699096,-101.178289],[19.698932,-101.17824],[19.698426,-101.178329],[19.697674,-101.178461],[19.697398,-101.178516]]},{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":3,"name":"Acueducto de Morelia","lat":19.6975,"lng":-101.1791},"to":{"stop_id":null,"name":null,"lat":19.6975,"lng":-101.1791},"distance_km":0,"eta_minutes":0}],"total_distance_km":0.665,"total_eta_minutes":5.7}]}''';
+
+/// Respuesta real de `GET /journeys` a un destino que ninguna ruta alcanza.
+///
+/// Del centro a 10 km al sur, con todos los modos seleccionados. Copiada del servidor
+/// corriendo: devuelve 5 minutos en bici y **122 caminando**, porque el motor limita la bici a
+/// 6 km pero a caminar no le pone tope. Es el caso que la pantalla tiene que saber encabezar
+/// con un aviso en vez de enseñarlo como un itinerario cualquiera.
+const String journeysBeyondNetworkPayload = '''
+{"alternatives":[{"label":"Tu selección","legs":[{"mode":"bike","route_id":null,"route_name":null,"from":{"stop_id":null,"name":null,"lat":19.7008,"lng":-101.1844},"to":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"distance_km":1.274,"eta_minutes":5.1},{"mode":"walk","route_id":null,"route_name":null,"from":{"stop_id":5,"name":"Bosque Cuauhtémoc","lat":19.6917,"lng":-101.177},"to":{"stop_id":null,"name":null,"lat":19.61,"lng":-101.1844},"distance_km":9.118,"eta_minutes":121.6}],"total_distance_km":10.392,"total_eta_minutes":126.7}]}''';
+
+/// Un trazado a pie de ejemplo, de la Catedral a las Tarascas por calles.
+const String walkPathPayload =
+    '{"path":[[19.7008,-101.1844],[19.7005,-101.1830],[19.6996,-101.1829],'
+    '[19.6994,-101.1789],[19.6989,-101.1789]]}';
+
 /// Registra las peticiones que recibe, para poder afirmar sobre ellas.
 class RecordedRequest {
-  const RecordedRequest({required this.method, required this.path, this.body});
+  const RecordedRequest({
+    required this.method,
+    required this.path,
+    this.query = const {},
+    this.body,
+  });
 
   final String method;
   final String path;
+
+  /// Los parámetros de la URL. `GET /journeys` manda ahí el filtro `modes`, que es lo que
+  /// decide qué viaje arma el servidor.
+  final Map<String, String> query;
+
   final Map<String, dynamic>? body;
 }
 
@@ -52,6 +89,7 @@ class FakeApi {
     this.demandJson = '[]',
     this.journeysJson = journeysPayload,
     this.journeysDelay = Duration.zero,
+    this.walkPathJson = '{"path":[]}',
     this.etaJson,
     this.etaStatusCode = 200,
     this.boardingStatusCode = 201,
@@ -65,6 +103,14 @@ class FakeApi {
   /// Cuánto tarda `GET /journeys`. Sin esto la respuesta llega en el mismo microtask y el
   /// estado de carga no existe el tiempo suficiente para verificarlo.
   final Duration journeysDelay;
+
+  /// Lo que responde `GET /walk-path`.
+  ///
+  /// Vacío por omisión —el caso "sin OSRM"— a propósito: es trazado que sustituye al que la
+  /// app calculó, así que inyectar una polilínea fija en toda prueba que toque una pantalla de
+  /// viaje le cambiaría el recorrido por uno que no tiene que ver con su destino. Quien
+  /// quiera probar el ajuste a calles pasa el suyo, como [walkPathPayload].
+  final String walkPathJson;
 
   /// `null` simula que la unidad todavía no reporta posición.
   final String? etaJson;
@@ -84,6 +130,7 @@ class FakeApi {
           RecordedRequest(
             method: request.method,
             path: path,
+            query: request.url.queryParameters,
             body: request.body.isEmpty
                 ? null
                 : jsonDecode(request.body) as Map<String, dynamic>,
@@ -101,6 +148,9 @@ class FakeApi {
           return http.Response(journeysJson, 200);
         }
         if (path == '/demand/stops') return http.Response(demandJson, 200);
+        if (path == '/walk-path') {
+          return http.Response(walkPathJson, 200);
+        }
         if (path == '/users') {
           return http.Response(
             '{"id":7,"name":"Pasajero Demo","role":"passenger"}',
@@ -211,5 +261,34 @@ class FakeRealtimeClient extends RealtimeClient {
     await _vehicles.close();
     await _demand.close();
     await _connected.close();
+  }
+}
+
+/// Geocodificador inverso que contesta sin red.
+///
+/// Por omisión devuelve siempre la misma dirección. Con [address] en `null` simula el caso de
+/// "no se pudo averiguar" —sin conexión, o un punto que el servicio no reconoce— que es el que
+/// hace a la pantalla caer a las coordenadas.
+class FakeGeocoder implements ReverseGeocoder {
+  FakeGeocoder({
+    this.address = 'Calle Antonio Alzate 805, Morelia',
+    this.delay = Duration.zero,
+  });
+
+  final String? address;
+
+  /// Cuánto tarda en contestar. Sin esto la respuesta llega en el mismo microtask y el estado
+  /// de "Buscando dirección…" no existe el tiempo suficiente para verificarlo.
+  final Duration delay;
+
+  /// Los puntos que se le preguntaron, en orden. Sirve para afirmar que un arrastre entero se
+  /// convierte en una sola consulta y no en una por cuadro.
+  final List<LatLng> asked = [];
+
+  @override
+  Future<String?> addressAt(LatLng point) async {
+    asked.add(point);
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
+    return address;
   }
 }
