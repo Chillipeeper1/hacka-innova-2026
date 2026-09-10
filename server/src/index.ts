@@ -13,6 +13,8 @@ import { routesRouter } from "./routes/routes";
 import { stopsRouter } from "./routes/stops";
 import { tripsRouter } from "./routes/trips";
 import { usersRouter } from "./routes/users";
+import { walkPathRouter } from "./routes/walkPath";
+import { warmRouteShapes } from "./lib/roadGeometry";
 import { attachIo } from "./sockets/emit";
 import { registerSocketHandlers } from "./sockets";
 
@@ -24,6 +26,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(routesRouter);
+app.use(walkPathRouter);
 app.use(stopsRouter);
 app.use(journeysRouter);
 app.use(usersRouter);
@@ -40,4 +43,7 @@ registerSocketHandlers(io);
 
 httpServer.listen(PORT, () => {
   console.log(`MaaS Morelia mock server escuchando en http://localhost:${PORT}`);
+  // Sin await: el servidor ya esta sirviendo. Si OSRM tarda o no esta, las
+  // primeras peticiones dibujan rectas y las siguientes ya salen cacheadas.
+  void warmRouteShapes();
 });

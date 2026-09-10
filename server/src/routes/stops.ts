@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db";
 import { haversineKm } from "../lib/geo";
-import { speedForMode } from "../lib/speeds";
+import { DEMO_VEHICLE_SPEED_KMH } from "../lib/speeds";
 
 export const stopsRouter = Router();
 
@@ -62,13 +62,17 @@ stopsRouter.get("/stops/:id/eta", (req, res) => {
     { lat: vehicle.last_lat, lng: vehicle.last_lng },
     { lat: stop.lat, lng: stop.lng }
   );
-  const etaMinutes = (distanceKm / speedForMode(stop.mode)) * 60;
+  // Con la velocidad del simulador, no con la del modo: ver DEMO_VEHICLE_SPEED_KMH.
+  const etaMinutes = (distanceKm / DEMO_VEHICLE_SPEED_KMH) * 60;
 
   res.json({
     stop_id: stop.id,
     route_id: stop.route_id,
     vehicle_id: vehicle.id,
     distance_km: Number(distanceKm.toFixed(3)),
-    eta_minutes: Number(etaMinutes.toFixed(1)),
+    // Dos decimales, no uno: comprimido el trayecto, casi todo el ETA cae por debajo del
+    // minuto y la app lo enseña en segundos. Con una décima de minuto el contador bajaría de
+    // seis en seis segundos.
+    eta_minutes: Number(etaMinutes.toFixed(2)),
   });
 });

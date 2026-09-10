@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { KNOWN_JOURNEY_MODES, planJourneyAlternatives } from "../lib/journeyPlanner";
+import { withRoadGeometry } from "../lib/roadGeometry";
 
 export const journeysRouter = Router();
 
-journeysRouter.get("/journeys", (req, res) => {
+journeysRouter.get("/journeys", async (req, res) => {
   const originLat = Number(req.query.origin_lat);
   const originLng = Number(req.query.origin_lng);
   const destinationLat = Number(req.query.destination_lat);
@@ -36,5 +37,8 @@ journeysRouter.get("/journeys", (req, res) => {
     requestedModes
   );
 
-  res.json({ alternatives });
+  // El trazado por calles va aparte del cálculo: el viaje ya está decidido
+  // y esto solo dice por dónde pasa la línea. Si OSRM no contesta, los
+  // tramos salen sin `geometry` y el cliente dibuja la recta de siempre.
+  res.json({ alternatives: await withRoadGeometry(alternatives) });
 });
