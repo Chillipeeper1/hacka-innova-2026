@@ -4,6 +4,13 @@ import { io } from "socket.io-client";
 import { MAX_BIKE_DISTANCE_KM } from "../src/lib/speeds";
 
 const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:3001";
+
+interface JourneyLegBody {
+  mode: string;
+  from: { lat: number; lng: number };
+  to: { lat: number; lng: number };
+  geometry?: [number, number][];
+}
 const DEMO_CARD_UID = "DEMO-0001";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -161,6 +168,42 @@ async function main() {
   );
   assert(!noBikeModes.has("bike"), "GET /journeys respeta `modes` y excluye bici cuando se pide");
 
+  // Y no basta con no contradecir el filtro: el viaje tiene que USAR algo de
+  // lo pedido. El bug era que, si caminar de punta a punta salía antes, el
+  // motor devolvía la caminata completa a quien había dicho "acepto combi" —
+  // sin abordar nada, o sea sin generar la señal de demanda del proyecto.
+  for (const [modos, destino] of [
+    ["combi", shortHopStop],
+    ["bus", shortHopStop],
+    ["combi,bus", shortHopStop],
+    ["teleferico", shortHopStop],
+    ["combi,bus,teleferico", longHopStop],
+  ] as [string, { lat: number; lng: number }][]) {
+    const res = await get(
+      `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+        `&destination_lat=${destino.lat}&destination_lng=${destino.lng}&modes=${modos}`
+    );
+    const usados = new Set(res.body.alternatives[0].legs.map((leg: { mode: string }) => leg.mode));
+    const pedidos = modos.split(",");
+    assert(
+      pedidos.some((modo) => usados.has(modo)),
+      `GET /journeys con modes=${modos} arma un viaje que usa alguno de esos modos ` +
+        `(devolvió: ${[...usados].join(", ")})`
+    );
+  }
+
+  // La excepción legítima: la bici queda fuera por distancia (>6 km), así
+  // que no hay viaje posible con lo pedido y se cae a caminar en vez de
+  // contestar "no hay viaje".
+  const bikeTooFarRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${longHopStop.lat}&destination_lng=${longHopStop.lng}&modes=bike`
+  );
+  assert(
+    bikeTooFarRes.status === 200 && bikeTooFarRes.body.alternatives.length === 1,
+    "GET /journeys sigue devolviendo un viaje cuando lo pedido es imposible (bici fuera de rango)"
+  );
+
   // `modes` inválido: 400.
   const invalidModesRes = await get(
     `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
@@ -185,6 +228,85 @@ async function main() {
       `GET /journeys: la alternativa "${alt.label}" no encadena bici más allá de MAX_BIKE_DISTANCE_KM (usó ${bikeKm} km)`
     );
   }
+
+  // Trazado por calles: `geometry` es opcional a proposito -- una demo sin
+  // internet, o con OSRM caido, devuelve los tramos pelados y el cliente
+  // dibuja la recta. Lo que no puede pasar es que venga mal formado, que es
+  // lo que dibujaria una linea en mitad del oceano.
+  const geoRes = await get(
+    `/journeys?origin_lat=${originStop.lat}&origin_lng=${originStop.lng}` +
+      `&destination_lat=${shortHopStop.lat}&destination_lng=${shortHopStop.lng}` +
+      `&modes=combi,bus,teleferico`
+  );
+  let conTrazado = 0;
+  for (const alt of geoRes.body.alternatives as { legs: JourneyLegBody[] }[]) {
+    for (const leg of alt.legs) {
+      if (leg.geometry === undefined) continue;
+      conTrazado++;
+      assert(
+        leg.geometry.length >= 2,
+        `GET /journeys: el trazado del tramo ${leg.mode} trae al menos dos puntos`
+      );
+      const fuera = leg.geometry.filter(
+        ([lat, lng]) => lat < 19.5 || lat > 19.9 || lng < -101.5 || lng > -100.9
+      );
+      assert(
+        fuera.length === 0,
+        `GET /journeys: el trazado del tramo ${leg.mode} cae dentro de Morelia ` +
+          `(si no, lat/lng vienen invertidos: ${JSON.stringify(fuera[0])})`
+      );
+      const primero = leg.geometry[0];
+      const ultimo = leg.geometry[leg.geometry.length - 1];
+      assert(
+        Math.abs(primero[0] - leg.from.lat) < 0.01 && Math.abs(ultimo[0] - leg.to.lat) < 0.01,
+        `GET /journeys: el trazado del tramo ${leg.mode} empieza y acaba en sus extremos`
+      );
+      assert(
+        leg.mode !== "teleferico",
+        "GET /journeys: solo traen trazado por calles los tramos que van por calle (el teleferico va por el aire)"
+      );
+    }
+  }
+  console.log(
+    conTrazado > 0
+      ? `✓ GET /journeys: ${conTrazado} tramo(s) con trazado por calles, bien formados`
+      : "- GET /journeys: sin trazado por calles (OSRM no disponible) - se dibujaran rectas"
+  );
+
+  // /routes: `shape` es el trazado por calles de la ruta entera. Opcional
+  // por las mismas razones que `geometry`, y con las mismas garantias de
+  // forma cuando viene.
+  const shapeRes = await get("/routes");
+  let rutasConTrazado = 0;
+  for (const route of shapeRes.body as { name: string; mode: string; shape?: [number, number][] }[]) {
+    if (route.shape === undefined) continue;
+    rutasConTrazado++;
+    assert(
+      route.shape.length >= 2,
+      `GET /routes: el trazado de "${route.name}" trae al menos dos puntos`
+    );
+    assert(
+      route.mode !== "teleferico",
+      "GET /routes: solo traen trazado por calles las rutas que van por calle"
+    );
+  }
+  console.log(
+    rutasConTrazado > 0
+      ? `✓ GET /routes: ${rutasConTrazado} ruta(s) con trazado por calles`
+      : "- GET /routes: sin trazado por calles (OSRM no disponible)"
+  );
+
+  // /walk-path: el tramo a pie hasta la parada.
+  const walkRes = await get(
+    `/walk-path?from_lat=19.7095&from_lng=-101.1955` +
+      `&to_lat=${originStop.lat}&to_lng=${originStop.lng}`
+  );
+  assert(
+    walkRes.status === 200 && Array.isArray(walkRes.body.path),
+    "GET /walk-path devuelve un trazado (vacio si no hay OSRM, nunca un error)"
+  );
+  const malRes = await get("/walk-path?from_lat=abc&from_lng=1&to_lat=2&to_lng=3");
+  assert(malRes.status === 400, "GET /walk-path rechaza coordenadas invalidas");
 
   console.log("\nTodo el flujo pasó correctamente.");
 }

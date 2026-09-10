@@ -52,6 +52,12 @@ export interface JourneyLeg {
   to: JourneyPoint;
   distance_km: number;
   eta_minutes: number;
+  // Trazado por calles, como pares [lat, lng]. Lo añade `roadGeometry.ts`
+  // después de planear, y puede faltar (OSRM caído, tramo de longitud cero,
+  // teleférico) — sin él el cliente dibuja la recta entre los extremos.
+  // `distance_km` y `eta_minutes` NO lo miden: siguen siendo la línea recta
+  // a velocidad fija con la que el motor eligió este viaje.
+  geometry?: [number, number][];
 }
 
 export interface JourneyResult {
@@ -68,6 +74,14 @@ interface PlanOptions {
   // null = todos los modos permitidos. Caminar nunca se filtra.
   allowedModes: Set<string> | null;
   transferPenaltyMin: number;
+  // Exige que el viaje use al menos un tramo de `allowedModes`, en vez de
+  // devolver el camino más rápido a secas. Aplica solo cuando el cliente
+  // declaró sus modos: quien pidió "combi" está preguntando cómo llegar en
+  // combi, y contestarle "camina 26 minutos" no responde esa pregunta
+  // —además de no generar ninguna señal de abordaje, que es el punto del
+  // proyecto—. Sin declaración de modos no aplica: ahí "Más rápida" tiene
+  // que poder ser caminar o pedalear si de verdad lo es.
+  requireAllowedMode: boolean;
 }
 
 interface Edge {
@@ -113,7 +127,7 @@ function planJourney(origin: LatLng, destination: LatLng, options: PlanOptions):
 // combinaciones absurdas (caminar kilómetros quedaría siempre más caro que
 // una alternativa razonable, si existe).
 function runPlanner(origin: LatLng, destination: LatLng, options: PlanOptions): JourneyResult {
-  const { allowedModes, transferPenaltyMin } = options;
+  const { allowedModes, transferPenaltyMin, requireAllowedMode } = options;
   const stops = db.prepare("SELECT id, name, lat, lng, route_id FROM stops").all() as StopRow[];
   const routes = db.prepare("SELECT id, name, mode FROM routes").all() as RouteRow[];
   const routeById = new Map(routes.map((r) => [r.id, r]));
@@ -211,7 +225,12 @@ function runPlanner(origin: LatLng, destination: LatLng, options: PlanOptions): 
     }
   }
 
-  const legs = dijkstra(graph, nodeLocation);
+  // Con exigencia: el mejor viaje que sí usa alguno de los modos elegidos.
+  // Si no existe ninguno —el filtro no cubre ninguna ruta del grafo, o la
+  // bici quedó fuera por distancia— se cae al camino más rápido, que en el
+  // peor caso es caminar. Nunca se devuelve "no hay viaje".
+  const required = requireAllowedMode && allowedModes !== null ? allowedModes : null;
+  const legs = (required !== null ? dijkstra(graph, nodeLocation, required) : null) ?? dijkstra(graph, nodeLocation, null)!;
   const totalDistanceKm = legs.reduce((sum, leg) => sum + leg.distance_km, 0);
   const totalEtaMinutes = legs.reduce((sum, leg) => sum + leg.eta_minutes, 0);
 
@@ -243,20 +262,36 @@ export function planJourneyAlternatives(
     const result = planJourney(origin, destination, {
       allowedModes: requestedModes,
       transferPenaltyMin: DEFAULT_TRANSFER_PENALTY_MIN,
+      requireAllowedMode: true,
     });
     return [{ label: "Tu selección", ...result }];
   }
 
   const modesWithoutBike = new Set(KNOWN_JOURNEY_MODES.filter((mode) => mode !== "bike"));
   const attempts: { label: string; options: PlanOptions }[] = [
-    { label: "Más rápida", options: { allowedModes: null, transferPenaltyMin: DEFAULT_TRANSFER_PENALTY_MIN } },
+    {
+      label: "Más rápida",
+      options: {
+        allowedModes: null,
+        transferPenaltyMin: DEFAULT_TRANSFER_PENALTY_MIN,
+        requireAllowedMode: false,
+      },
+    },
     {
       label: "Sin bicicleta",
-      options: { allowedModes: modesWithoutBike, transferPenaltyMin: DEFAULT_TRANSFER_PENALTY_MIN },
+      options: {
+        allowedModes: modesWithoutBike,
+        transferPenaltyMin: DEFAULT_TRANSFER_PENALTY_MIN,
+        requireAllowedMode: false,
+      },
     },
     {
       label: "Con menos transbordos",
-      options: { allowedModes: null, transferPenaltyMin: FEW_TRANSFERS_PENALTY_MIN },
+      options: {
+        allowedModes: null,
+        transferPenaltyMin: FEW_TRANSFERS_PENALTY_MIN,
+        requireAllowedMode: false,
+      },
     },
   ];
 
@@ -275,43 +310,70 @@ export function planJourneyAlternatives(
 // Dijkstra con selección lineal del mínimo — el grafo tiene decenas de
 // nodos como mucho en este mockup, así que una cola de prioridad real
 // sería complejidad sin beneficio medible.
-function dijkstra(graph: Map<string, Edge[]>, nodeLocation: Map<string, JourneyPoint>): JourneyLeg[] {
-  const dist = new Map<string, number>([[ORIGIN, 0]]);
-  const prevEdge = new Map<string, { from: string; edge: Edge }>();
-  const visited = new Set<string>();
+//
+// Con `requiredModes` corre sobre el grafo duplicado en dos capas: la 0 es
+// "todavía no aborda nada de lo que pediste" y la 1 "ya abordó". Una arista
+// de un modo exigido sube de capa; las demás se quedan donde están, y el
+// destino solo cuenta en la capa 1. Así el camino más corto que encuentra ya
+// es el mejor de los que sí usan lo elegido — no el mejor a secas, filtrado
+// después, que es donde caminar de punta a punta ganaba siempre.
+//
+// Devuelve `null` si no existe ninguno (sin exigencia nunca pasa: la arista
+// origen -> destino caminando siempre está).
+type State = string;
+
+const stateOf = (node: string, boarded: boolean): State => `${node}#${boarded ? 1 : 0}`;
+const nodeOf = (state: State): string => state.slice(0, state.lastIndexOf("#"));
+const boardedIn = (state: State): boolean => state.endsWith("#1");
+
+function dijkstra(
+  graph: Map<string, Edge[]>,
+  nodeLocation: Map<string, JourneyPoint>,
+  requiredModes: Set<string> | null
+): JourneyLeg[] | null {
+  const start = stateOf(ORIGIN, false);
+  const target = stateOf(DESTINATION, requiredModes !== null);
+
+  const dist = new Map<State, number>([[start, 0]]);
+  const prevEdge = new Map<State, { from: State; edge: Edge }>();
+  const visited = new Set<State>();
 
   while (true) {
-    let current: string | null = null;
+    let current: State | null = null;
     let currentDist = Infinity;
-    for (const [node, d] of dist) {
-      if (!visited.has(node) && d < currentDist) {
-        current = node;
+    for (const [state, d] of dist) {
+      if (!visited.has(state) && d < currentDist) {
+        current = state;
         currentDist = d;
       }
     }
-    if (current === null || current === DESTINATION) break;
+    if (current === null || current === target) break;
     visited.add(current);
 
-    for (const edge of graph.get(current) ?? []) {
+    const boarded = boardedIn(current);
+    for (const edge of graph.get(nodeOf(current)) ?? []) {
+      const next = stateOf(edge.to, requiredModes !== null && (boarded || requiredModes.has(edge.mode)));
       const candidate = currentDist + edge.weightMinutes;
-      if (candidate < (dist.get(edge.to) ?? Infinity)) {
-        dist.set(edge.to, candidate);
-        prevEdge.set(edge.to, { from: current, edge });
+      if (candidate < (dist.get(next) ?? Infinity)) {
+        dist.set(next, candidate);
+        prevEdge.set(next, { from: current, edge });
       }
     }
   }
 
+  if (!dist.has(target)) return null;
+
   const legs: JourneyLeg[] = [];
-  let cursor = DESTINATION;
-  while (cursor !== ORIGIN) {
+  let cursor = target;
+  while (cursor !== start) {
     const step = prevEdge.get(cursor);
-    if (!step) break; // no debería pasar: origen -> destino directo siempre es una arista
+    if (!step) return null;
     legs.unshift({
       mode: step.edge.mode,
       route_id: step.edge.routeId,
       route_name: step.edge.routeName,
-      from: nodeLocation.get(step.from)!,
-      to: nodeLocation.get(cursor)!,
+      from: nodeLocation.get(nodeOf(step.from))!,
+      to: nodeLocation.get(nodeOf(cursor))!,
       distance_km: Number(step.edge.distanceKm.toFixed(3)),
       eta_minutes: Number(step.edge.weightMinutes.toFixed(1)),
     });

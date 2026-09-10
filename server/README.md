@@ -4,7 +4,7 @@
 npm install
 npm run dev          # levanta el servidor en http://localhost:3001
 npm run simulate      # en otra terminal: teletransporta la unidad parada a parada cada 3s (rápido para probar el evento)
-npm run demo-drive    # alternativa para presentar: recorrido continuo a velocidad de camión, con parada real en cada stop (ventana para pagar)
+npm run demo-drive    # alternativa para presentar: recorrido continuo a velocidad comprimida (SPEED_KMH=600), con parada real en cada stop (DWELL_MS=5000, ventana para pagar)
 npm run test:smoke    # en otra terminal, con el servidor ya corriendo: recorre todo el flujo de la API
 ```
 
@@ -24,11 +24,53 @@ corridas de la demo.
 | POST | `/boarding-signals` | `{ user_id, stop_id, route_id, intent, destination_stop_id?, destination_lat?, destination_lng? }` | `intent`: `boarding` (→ `waiting`) \| `passing` (→ `expired`). Los `destination_*` son opcionales, para estimar carga por tramo en el panel institucional a futuro |
 | PATCH | `/boarding-signals/:id` | `{ status }` | `status`: `waiting`\|`boarded`\|`alighted`\|`expired` |
 | GET | `/demand/stops` | — | `[{ stop_id, waiting_count }]`, conteo de `waiting` |
-| GET | `/stops/:id/eta` (Escenario 2) | — | `{ stop_id, route_id, vehicle_id, distance_km, eta_minutes }`; ambos `null` si el vehículo de esa ruta aún no emitió ninguna posición. ETA = distancia en línea recta / velocidad del modo de esa ruta (`speedForMode` en `lib/speeds.ts`) |
+| GET | `/stops/:id/eta` (Escenario 2) | — | `{ stop_id, route_id, vehicle_id, distance_km, eta_minutes }`; ambos `null` si el vehículo de esa ruta aún no emitió ninguna posición. ETA = distancia en línea recta / `DEMO_VEHICLE_SPEED_KMH` (`lib/speeds.ts`), la velocidad del conductor simulado — no la del modo, para que el número cuadre con la unidad que se ve avanzar |
 | POST | `/card-taps` (Escenario 6) | `{ card_uid, vehicle_id, tapped_at?, boarding_signal_id? }` | Sin `boarding_signal_id`: crea una señal nueva sin parada, directo en `boarded`. Con `boarding_signal_id`: reutiliza esa señal (ya declarada en una parada) y la marca `boarded` — así el conteo de demanda baja correctamente en vez de quedar como `expired` |
 | POST | `/trips/:id/rating` (Escenario 7) | `{ rating, comment? }` | `:id` es el `boarding_signal_id` que llegó a `boarded` — el contrato no define un recurso `/trips` separado, ver nota en `schema.sql` |
 | POST | `/incidents` (Escenario 7) | `{ user_id, route_id, category, description? }` | — |
 | GET | `/journeys` (Escenario 8) | query: `origin_lat, origin_lng, destination_lat, destination_lng, modes?` | Recomendación de ruta con transbordos, hasta 3 alternativas — ver detalle abajo |
+
+### Trazado por calles (`geometry`, `shape`, `/walk-path`)
+
+Cada `leg` puede traer `geometry`: la polilinea real por calles, como pares
+`[lat, lng]`. La anade `src/lib/roadGeometry.ts` **despues** de planear,
+pidiendosela a OSRM (`OSRM_URL`, por omision `https://router.project-osrm.org`).
+
+Separacion deliberada: elegir que tomar y dibujar por donde va son dos
+preguntas distintas. El motor sigue decidiendo con haversine — hacerlo con
+ruteo real seria una peticion por cada par de paradas del grafo — y esto
+solo traza el viaje ya decidido: unos pocos tramos, una peticion por tramo,
+cacheadas en memoria. Por eso `distance_km` y `eta_minutes` **no** miden la
+polilinea: son la linea recta a velocidad fija con la que se eligio.
+
+- Los tramos de transporte van con las paradas intermedias de su ruta como
+  waypoints, para que la linea pase por donde la unidad para de verdad y no
+  por el atajo mas corto entre las dos puntas.
+- El teleferico no lleva trazado: va por el aire, y ahi la recta es correcta.
+  Los tramos de longitud cero (conexiones origen-parada) tampoco.
+- Si OSRM no contesta, los tramos salen sin `geometry` y el cliente dibuja la
+  recta de siempre. Tras un fallo se deja de insistir 60 s (`BACKOFF_MS`), asi
+  una demo sin internet no paga el timeout en cada tramo de cada peticion.
+
+Las otras dos superficies donde se dibuja una ruta usan el mismo motor:
+
+- `GET /routes` anade `shape` a cada ruta: su trazado completo por calles,
+  pasando por todas sus paradas. Es lo que dibujan las pantallas del viaje en
+  camion, que antes unian paradas con rectas. Se precalienta al arrancar
+  (`warmRouteShapes`), de una peticion en una, porque el servidor publico
+  limita rafagas y un fallo cortaba el trazado de todas las rutas a la vez.
+- `GET /walk-path?from_lat&from_lng&to_lat&to_lng&via?` da un trazado a pie por
+  calles. `via` son puntos intermedios (`lat,lng` separados por `;`) por los
+  que el camino tiene que pasar: los vertices de un rodeo que ya esquiva una
+  zona marcada, los extremos de una ciclovia. Sin ellos, ajustar a calles
+  deshace el desvio que el cliente costo calcular. Devuelve `{ "path": [] }`
+  cuando no hay trazado, nunca un error. Lo usan el tramo a pie hasta la parada
+  (flujo de camion) y los modos de bici y caminata, que trazan en el cliente.
+
+El servidor publico de OSRM **solo tiene el perfil de coche** — responde lo
+mismo a `foot`, `bike` y `driving`—, asi que los tramos a pie y en bici
+siguen calles de coche. Con un OSRM propio y perfiles reales, basta apuntar
+`OSRM_URL` a el.
 
 ### `GET /journeys` — filtro de modos y alternativas
 
@@ -43,7 +85,23 @@ corridas de la demo.
   descartando cualquiera que resulte idéntica a otra ya incluida.
 - **Con `modes`**: respeta esa elección tal cual y devuelve una sola
   alternativa (`"Tu selección"`), sin generar variantes derivadas — el
-  cliente ya decidió la restricción.
+  cliente ya decidió la restricción. Además **garantiza que el viaje use al
+  menos uno de los modos pedidos**: quien declara "acepto combi" está
+  preguntando cómo llegar en combi, y devolverle la caminata completa porque
+  sale antes no responde esa pregunta — y no genera ninguna señal de
+  abordaje, que es el punto del proyecto. Única excepción: si con lo pedido
+  no existe ningún viaje posible (p. ej. `modes=bike` a 9 km, fuera de
+  `MAX_BIKE_DISTANCE_KM`), se cae al camino más rápido en vez de contestar
+  "no hay viaje". Implementación: Dijkstra sobre el grafo duplicado en dos
+  capas — "aún no aborda" y "ya abordó"—, donde una arista de un modo pedido
+  sube de capa y el destino solo cuenta en la segunda; así el resultado es el
+  **mejor de los viajes que sí abordan**, no el mejor a secas descartado
+  después.
+
+  Efecto secundario a tener presente: en trayectos muy cortos el viaje
+  forzado puede salir peor que caminar (destino a 150 m → aborda, se pasa y
+  regresa a pie). Es deliberado; si molesta en la demo, la salida sería
+  devolver también una alternativa `"Caminando"` cuando gane por mucho.
 
 ```json
 {
